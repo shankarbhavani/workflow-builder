@@ -1,0 +1,1490 @@
+{
+  "generated_at": "2025-01-31T00:00:00.000000",
+  "version": "2.0",
+  "description": "Curated action catalog for workflow automation - focused on Carrier Follow Up, Shipment Update, and Escalation workflows",
+  "actions": [
+    {
+      "action_name": "load_search_trigger",
+      "class_name": "LoadSearchTrigger",
+      "method_name": "execute",
+      "domain": "Carrier Follow Up",
+      "action_path": "ai_agent_actions.actions.api.v1.wrapped.triggers.load_search",
+      "file_path": "ai_agent_actions/actions/api/v1/wrapped/triggers/load_search.py",
+      "description": "Search for loads with user-friendly parameters, automatically handling date ranges, status filters, and carrier/mode filtering. Returns results in SCAC-grouped format optimized for carrier communication or flat list format for detailed load information.",
+      "purpose": "Find loads matching specific criteria for follow-up, escalation, or status update workflows",
+      "when_to_use": "Use when you need to search for loads by status, tracking status, date range, carrier (SCAC), or mode. Ideal for carrier follow-up workflows where you need to group loads by carrier.",
+      "parameters": {
+        "event_data": {
+          "shipper_id": {"type": "string", "required": true, "description": "Shipper identifier"},
+          "agent_id": {"type": "string", "required": true, "description": "Agent identifier (e.g., TRACY, SAM)"},
+          "parent_request_id": {"type": "string", "required": false, "description": "Request ID for tracking"}
+        },
+        "configurations": {
+          "date_range": {"type": "object", "required": false, "description": "Date range filter with 'from' and 'to' fields (YYYY-MM-DD). Defaults to last 7 days if not provided"},
+          "load_status": {"type": "array", "required": false, "description": "List of load statuses (e.g., ['DELAYED', 'AT_RISK']). Converted to comma-separated string internally"},
+          "tracking_status": {"type": "array", "required": false, "description": "List of tracking statuses (e.g., ['late', 'on_time', 'stale_location']). Converted to comma-separated string internally"},
+          "carrier_filter": {"type": "array", "required": false, "description": "List of SCAC codes (e.g., ['ABCD', 'EFGH']). Converted to pipe-separated string internally"},
+          "mode_filter": {"type": "array", "required": false, "description": "List of modes (e.g., ['TL', 'LTL', 'IM']). Converted to pipe-separated string internally"},
+          "stale_location_threshold": {"type": "number", "required": false, "default": 4, "description": "Hours without location update to consider load stale (default: 4 hours)"},
+          "pickup_start_date": {"type": "string", "required": false, "description": "Pickup date range start (YYYY-MM-DD format)"},
+          "pickup_end_date": {"type": "string", "required": false, "description": "Pickup date range end (YYYY-MM-DD format)"},
+          "pickup_date_type": {"type": "string", "required": false, "default": "dateRange", "description": "Type of pickup date filter (default: dateRange)"},
+          "delivery_start_date": {"type": "string", "required": false, "description": "Delivery date range start (YYYY-MM-DD format)"},
+          "delivery_end_date": {"type": "string", "required": false, "description": "Delivery date range end (YYYY-MM-DD format)"},
+          "delivery_date_type": {"type": "string", "required": false, "default": "dateRange", "description": "Type of delivery date filter (default: dateRange)"},
+          "pickup_stop_names": {"type": "array", "required": false, "description": "Filter by pickup location names (case-insensitive, e.g., ['Chicago', 'Los Angeles'])"},
+          "filter_by_pickup_time": {
+            "type": "object",
+            "required": false,
+            "description": "Post-processing time-based filter for pickup appointments",
+            "fields": {
+              "enabled": {"type": "boolean", "default": true, "description": "Enable/disable this filter"},
+              "min_hours_from_now": {"type": "number", "required": false, "description": "Minimum hours from now (negative = past, e.g., -100 for 100 hours ago)"},
+              "max_hours_from_now": {"type": "number", "required": false, "description": "Maximum hours from now (e.g., 4 for next 4 hours)"}
+            }
+          },
+          "filter_by_delivery_time": {
+            "type": "object",
+            "required": false,
+            "description": "Post-processing time-based filter for delivery appointments",
+            "fields": {
+              "enabled": {"type": "boolean", "default": true, "description": "Enable/disable this filter"},
+              "min_hours_from_now": {"type": "number", "required": false, "description": "Minimum hours from now (negative = past)"},
+              "max_hours_from_now": {"type": "number", "required": false, "description": "Maximum hours from now"}
+            }
+          },
+          "exclude_by_fields": {
+            "type": "array",
+            "required": false,
+            "description": "Post-processing field-based exclusion filters. Array of objects with {field_name, exclude_values}",
+            "example": [
+              {"field_name": "status", "exclude_values": ["delivered", "cancelled"]},
+              {"field_name": "pickedUp", "exclude_values": [true]},
+              {"field_name": "trackingStrategy", "exclude_values": ["rail"]}
+            ]
+          },
+          "include_scac_grouped": {"type": "boolean", "required": false, "default": true, "description": "If true, returns scac_load_dict with essential load details grouped by SCAC (optimized for carrier emails)"},
+          "include_flat_list": {"type": "boolean", "required": false, "default": true, "description": "If true, returns loads array with complete load details in flat list format"},
+          "custom_filters": {"type": "object", "required": false, "description": "Advanced custom filters (e.g., origin_state, destination_state)"},
+          "limit": {"type": "number", "required": false, "description": "Maximum number of loads to return"},
+          "offset": {"type": "number", "required": false, "description": "Number of loads to skip (for pagination)"}
+        }
+      },
+      "returns": {
+        "load_numbers": {"type": "array", "description": "List of load numbers found"},
+        "scac_load_dict": {"type": "object", "description": "Loads grouped by SCAC with essential details (tracking_id, load_number, shipper/carrier info, origin/destination, status, etc.)"},
+        "loads": {"type": "array", "description": "Complete load details in flat list format (all fields from tracking API)"},
+        "metadata": {"type": "object", "description": "Search metadata including total_loads, total_carriers, search_params, and search_timestamp"}
+      },
+      "api": {
+        "endpoint": "/api/v1/wrapped/triggers/load_search",
+        "http_method": "POST",
+        "base_url_env": "ACTION_SERVICE_URL",
+        "authentication": {
+          "type": "Basic",
+          "header": "Authorization",
+          "value_format": "Basic <base64_encoded_credentials>"
+        },
+        "request_format": {
+          "event_data": "Required object with shipper_id, agent_id",
+          "configurations": "Optional object with search parameters"
+        },
+        "response_format": {
+          "load_numbers": "array of strings",
+          "scac_load_dict": "object keyed by SCAC",
+          "loads": "array of load objects",
+          "metadata": "object",
+          "audit": "array of audit logs"
+        },
+        "timeout": {"default_seconds": 120},
+        "retry_policy": {"enabled": true, "max_retries": 3, "backoff_seconds": 10}
+      },
+      "prerequisites": ["Valid shipper_id and agent_id", "Authentication credentials", "Access to FourKites tracking API"],
+      "alternatives": ["search_shipments_by_number for specific load numbers", "get_milestones for milestone-based searches"],
+      "example_usage": {
+        "description": "Search for delayed TL loads from specific carriers in the last 7 days",
+        "request": {
+          "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY"},
+          "configurations": {
+            "load_status": ["DELAYED"],
+            "mode_filter": ["TL"],
+            "carrier_filter": ["ABCD", "EFGH"],
+            "include_scac_grouped": true,
+            "include_flat_list": false
+          }
+        }
+      },
+      "additional_examples": [
+        {
+          "description": "Stale Loads - Find loads with outdated location data, excluding delivered/cancelled",
+          "request": {
+            "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY"},
+            "configurations": {
+              "tracking_status": ["stale_location"],
+              "stale_location_threshold": 4,
+              "delivery_start_date": "2025-11-02",
+              "delivery_end_date": "2025-11-05",
+              "mode_filter": ["TL"],
+              "exclude_by_fields": [
+                {"field_name": "status", "exclude_values": ["delivered", "cancelled"]}
+              ]
+            }
+          }
+        },
+        {
+          "description": "Asset Not Assigned - Find loads missing truck/trailer with pickups approaching in next 4 hours",
+          "request": {
+            "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY"},
+            "configurations": {
+              "mode_filter": ["TL"],
+              "load_status": ["awaiting_tracking_info", "awaiting_shipment_information"],
+              "pickup_start_date": "2025-11-02",
+              "pickup_end_date": "2025-11-02",
+              "filter_by_pickup_time": {
+                "enabled": true,
+                "min_hours_from_now": 0,
+                "max_hours_from_now": 4
+              }
+            }
+          }
+        },
+        {
+          "description": "Not Picked Up - Find loads overdue for pickup (2-100 hours past appointment)",
+          "request": {
+            "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY"},
+            "configurations": {
+              "mode_filter": ["TL"],
+              "load_status": ["tracking_info_assigned", "tracking"],
+              "pickup_start_date": "2025-11-01",
+              "pickup_end_date": "2025-11-01",
+              "filter_by_pickup_time": {
+                "enabled": true,
+                "min_hours_from_now": -100,
+                "max_hours_from_now": -2
+              },
+              "exclude_by_fields": [
+                {"field_name": "pickedUp", "exclude_values": [true]}
+              ]
+            }
+          }
+        },
+        {
+          "description": "Delivery At Risk - Find loads with delivery approaching in next 6 hours but not yet delivered",
+          "request": {
+            "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY"},
+            "configurations": {
+              "mode_filter": ["TL"],
+              "load_status": ["tracking"],
+              "delivery_start_date": "2025-11-02",
+              "delivery_end_date": "2025-11-02",
+              "filter_by_delivery_time": {
+                "enabled": true,
+                "min_hours_from_now": 0,
+                "max_hours_from_now": 6
+              },
+              "exclude_by_fields": [
+                {"field_name": "status", "exclude_values": ["delivered"]}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "action_name": "send_email",
+      "class_name": "SendEmail",
+      "method_name": "execute",
+      "domain": "Carrier Follow Up",
+      "action_path": "ai_agent_actions.actions.api.v1.wrapped.communications.send_email",
+      "file_path": "ai_agent_actions/actions/api/v1/wrapped/communications/send_email.py",
+      "description": "Send emails with LLM-powered template generation or direct HTML template. Automatically retrieves contacts from carrier/shipper systems, tracks milestones for audit trail, and supports bulk email sending per SCAC/carrier.",
+      "purpose": "Send professional, context-aware emails to carriers or shippers with automatic contact retrieval and tracking",
+      "when_to_use": "Use after load_search_trigger to follow up with carriers about late loads, request updates, or send escalation emails. Supports both LLM generation from natural language and direct HTML templates.",
+      "parameters": {
+        "event_data": {
+          "shipper_id": {"type": "string", "required": true, "description": "Shipper identifier"},
+          "agent_id": {"type": "string", "required": true, "description": "Agent identifier"}
+        },
+        "configurations": {
+          "use_llm_generation": {"type": "boolean", "required": false, "default": false, "description": "If true, uses LLM to generate email from description. If false, uses email_template directly"},
+          "email_description": {"type": "string", "required": "conditional", "description": "Natural language description of email content (required if use_llm_generation=true). Example: 'Send urgent follow-up about late deliveries with emphasis on immediate action required'"},
+          "email_template": {"type": "string", "required": "conditional", "description": "Direct HTML email template with {{placeholders}} (required if use_llm_generation=false). Supports 100+ placeholders including load data, dates, carrier info, and aggregate fields"},
+          "email_subject": {"type": "string", "required": false, "description": "Email subject line. Auto-generated if not provided"},
+          "gmail_config": {
+            "type": "object",
+            "required": false,
+            "description": "Gmail OAuth2 credentials for sending emails. If not provided, credentials are retrieved from environment variables",
+            "fields": {
+              "email": {"type": "string", "required": true, "description": "Gmail email address to send from"},
+              "client_id": {"type": "string", "required": true, "description": "OAuth2 client ID from Google Cloud Console"},
+              "client_secret": {"type": "string", "required": true, "description": "OAuth2 client secret"},
+              "refresh_token": {"type": "string", "required": true, "description": "OAuth2 refresh token"},
+              "token_uri": {"type": "string", "required": false, "default": "https://oauth2.googleapis.com/token", "description": "Google OAuth2 token endpoint URL"}
+            }
+          },
+          "connect_from_role": {"type": "string", "required": true, "description": "Sender role: 'shipper', 'carrier', or 'customer'"},
+          "connect_to_role": {"type": "string", "required": true, "description": "Recipient role: 'shipper', 'carrier', or 'customer'"},
+          "connect_from_id": {"type": "string", "required": false, "description": "Sender identifier (extracted from event_data if not provided)"},
+          "network_identifier_key": {"type": "string", "required": false, "default": "scac", "description": "Network ID type: 'scac', 'customer_id', 'address_id', 'carrier_id'"},
+          "to_levels": {"type": "array", "required": false, "default": ["is_level_1", "is_level_2"], "description": "Contact priority levels to include (is_level_1: primary, is_level_2: secondary, is_level_3: tertiary)"},
+          "custom_recipients": {"type": "array", "required": false, "description": "List of custom email addresses (completely overrides platform contact retrieval)"},
+          "to_list": {"type": "array", "required": false, "description": "Additional TO recipients (concatenated with platform contacts)"},
+          "cc_list": {"type": "array", "required": false, "description": "Additional CC recipients (concatenated with platform contacts)"},
+          "sender_email": {"type": "string", "required": false, "description": "Override sender email address (uses environment variable if not provided)"},
+          "track_milestone": {"type": "boolean", "required": false, "default": true, "description": "Whether to track email sending as a milestone"},
+          "milestone_comment": {"type": "string", "required": false, "default": "Email sent via wrapped action", "description": "Custom milestone description"},
+          "logo_url": {"type": "string", "required": false, "description": "Company logo URL for email header branding"},
+          "custom_template": {"type": "string", "required": false, "description": "Custom Jinja2 template for advanced email generation"}
+        },
+        "data": {
+          "scac_load_dict": {"type": "object", "required": true, "description": "Load data from load_search_trigger (required)"}
+        }
+      },
+      "returns": {
+        "email_send_results": {"type": "object", "description": "Results keyed by SCAC with {status, message_id, thread_id, timestamp, recipients, cc_recipients}"},
+        "generated_email_template": {"type": "string", "description": "The generated or used HTML email template"},
+        "email_subject": {"type": "string", "description": "The email subject used"},
+        "sent_mail_thread_id": {"type": "string", "description": "Gmail thread ID of sent email (for escalation tracking)"},
+        "mail_sent_time": {"type": "number", "description": "Timestamp when email was sent (epoch milliseconds)"},
+        "inserted_milestones": {"type": "array", "description": "Milestone tracking records with {milestone_id, load_number, status}"},
+        "scac_mail_dict": {"type": "object", "description": "Contact information retrieved per SCAC with {emails, mail_sent_time}"}
+      },
+      "api": {
+        "endpoint": "/api/v1/wrapped/communications/send_email",
+        "http_method": "POST",
+        "base_url_env": "ACTION_SERVICE_URL",
+        "authentication": {
+          "type": "Basic",
+          "header": "Authorization",
+          "value_format": "Basic <base64_encoded_credentials>"
+        },
+        "request_format": {
+          "event_data": "Required object with shipper_id, agent_id",
+          "configurations": "Required object with email parameters",
+          "data": "Required object with scac_load_dict from load search"
+        },
+        "response_format": {
+          "email_send_results": "object",
+          "generated_email_template": "string (HTML)",
+          "email_subject": "string",
+          "inserted_milestones": "array",
+          "scac_mail_dict": "object",
+          "audit": "array"
+        },
+        "timeout": {"default_seconds": 180},
+        "retry_policy": {"enabled": true, "max_retries": 2, "backoff_seconds": 15}
+      },
+      "prerequisites": ["Load data from load_search_trigger", "Gmail OAuth credentials (via gmail_config parameter OR environment variables)", "OpenAI/Anthropic API key (if using LLM generation)", "Contact data available in FourKites platform (if not using custom_recipients)"],
+      "alternatives": ["draft_mail for draft-only without sending", "process_emails for incoming email processing"],
+      "example_usage": {
+        "description": "Send LLM-generated follow-up email to carriers about late loads",
+        "request": {
+          "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY"},
+          "configurations": {
+            "use_llm_generation": true,
+            "email_description": "Send urgent follow-up about late deliveries with emphasis on immediate action required. Include load numbers and expected delivery dates.",
+            "connect_from_role": "shipper",
+            "connect_to_role": "carrier",
+            "network_identifier_key": "scac",
+            "to_levels": ["is_level_1", "is_level_2"],
+            "track_milestone": true
+          },
+          "data": {"scac_load_dict": "...from load_search_trigger..."}
+        }
+      },
+      "placeholder_reference": {
+        "description": "Available placeholders for email_template (100+ total)",
+        "categories": {
+          "load_data": ["{{load_number}}", "{{tracking_id}}", "{{pro_number}}", "{{origin}}", "{{destination}}", "{{status}}", "{{tracking_status}}"],
+          "dates": ["{{pickup_date}}", "{{delivery_date}}", "{{pickup_appointment}}", "{{delivery_appointment}}", "{{timestamp}}"],
+          "carrier": ["{{carrier_name}}", "{{scac}}", "{{carrier_id}}", "{{carrier_email}}"],
+          "driver": ["{{driver_name}}", "{{driver_phone}}", "{{driver_email}}", "{{truck_number}}", "{{trailer_number}}"],
+          "aggregate": ["{{total_loads}}", "{{total_carriers}}", "{{carrier_list}}", "{{load_list}}"],
+          "auto_generated": ["{{tracking_link}}", "{{shipper_name}}"]
+        },
+        "multi_load_handling": "Templates automatically expand for multiple loads. Use table rows or repeat markers (<!-- REPEAT_START --> ... <!-- REPEAT_END -->) for structured layouts"
+      },
+      "additional_examples": [
+        {
+          "description": "Direct template mode with custom recipients",
+          "request": {
+            "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY"},
+            "configurations": {
+              "use_llm_generation": false,
+              "email_template": "<html><body><h2>Load Update Required</h2><p>Dear {{carrier_name}},</p><p>We need updates on the following loads:</p><ul><!-- REPEAT_START --><li>{{load_number}} - {{status}}</li><!-- REPEAT_END --></ul></body></html>",
+              "email_subject": "Action Required: Load Status Update",
+              "custom_recipients": ["carrier@example.com", "ops@example.com"],
+              "track_milestone": true
+            },
+            "data": {"scac_load_dict": "...from load_search_trigger..."}
+          }
+        },
+        {
+          "description": "With Gmail credentials in request body (MCP-ready, no environment setup needed)",
+          "request": {
+            "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY"},
+            "configurations": {
+              "gmail_config": {
+                "email": "tracy@fourkites.com",
+                "client_id": "575876578450-abc123.apps.googleusercontent.com",
+                "client_secret": "GOCSPX-xyzabc123",
+                "refresh_token": "1//0abc123xyz",
+                "token_uri": "https://oauth2.googleapis.com/token"
+              },
+              "use_llm_generation": false,
+              "email_template": "<html><body><h2>Load Alert</h2><p>Dear {{carrier_name}},</p><p>Load {{load_number}} requires immediate attention.</p></body></html>",
+              "email_subject": "URGENT: Load Requires Attention",
+              "connect_from_role": "shipper",
+              "connect_to_role": "carrier",
+              "to_levels": ["is_level_1"]
+            },
+            "data": {"scac_load_dict": "...from load_search_trigger..."}
+          }
+        },
+        {
+          "description": "Concatenation mode - Platform contacts + additional recipients",
+          "request": {
+            "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY"},
+            "configurations": {
+              "email_template": "...HTML template...",
+              "connect_from_role": "shipper",
+              "connect_to_role": "carrier",
+              "to_levels": ["is_level_1"],
+              "to_list": ["manager@company.com"],
+              "cc_list": ["ops@company.com", "dispatch@company.com"]
+            },
+            "data": {"scac_load_dict": "..."}
+          }
+        }
+      ]
+    },
+    {
+      "action_name": "process_emails",
+      "class_name": "ProcessEmails",
+      "method_name": "process_emails",
+      "domain": "Shipment Update",
+      "action_path": "ai_agent_actions.actions.api.v1.wrapped.communications.process_emails",
+      "file_path": "ai_agent_actions/actions/api/v1/wrapped/communications/process_emails.py",
+      "description": "Process emails from Gmail with intelligent categorization and webhook-based routing. Features: OAuth2 authentication, thread extraction, signature removal, attachment handling with S3 storage, dual categorization (deterministic rules + LLM fallback), and webhook routing for workflow integration.",
+      "purpose": "Automatically process incoming emails, categorize them, extract information, and route to appropriate workflows via webhooks",
+      "when_to_use": "Use for automated email monitoring and routing. Ideal for customer support automation, load update request processing, alert email routing, and document extraction from attachments.",
+      "parameters": {
+        "event_data": {
+          "shipper_id": {"type": "string", "required": true, "description": "Shipper identifier for multi-tenancy"},
+          "agent_id": {"type": "string", "required": true, "description": "Agent identifier"},
+          "parent_request_id": {"type": "string", "required": false, "description": "Request ID (auto-generated if not provided)"}
+        },
+        "configurations": {
+          "gmail_config": {
+            "type": "object",
+            "required": true,
+            "description": "Gmail OAuth2 credentials (can also be set via environment variables)",
+            "fields": {
+              "email": {"type": "string", "required": true, "description": "Gmail email address"},
+              "client_id": {"type": "string", "required": true, "description": "Google OAuth2 client ID"},
+              "client_secret": {"type": "string", "required": true, "description": "Google OAuth2 client secret"},
+              "refresh_token": {"type": "string", "required": true, "description": "Google OAuth2 refresh token"},
+              "token_uri": {"type": "string", "required": false, "default": "https://oauth2.googleapis.com/token", "description": "OAuth2 token endpoint"}
+            }
+          },
+          "webhook_mapping": {"type": "object", "required": true, "description": "Map category names to webhook URLs (e.g., {'explainability': 'https://api.example.com/explain'}). Direct category-to-URL routing"},
+          "enable_webhook_calls": {"type": "boolean", "required": false, "default": false, "description": "If true, actually invokes webhooks. If false, only logs what would be called (safe testing mode)"},
+          "category_descriptions": {"type": "string", "required": false, "description": "LLM categorization descriptions (format: 'category1: description1\\ncategory2: description2')"},
+          "deterministic_conditions": {"type": "object", "required": false, "description": "Rule-based categorization conditions with logical operators. Format: {category: [{key, expected_value, operator, logical_operator}]}. Operators: equals, contains, starts with, ends with. Logical: AND, OR"},
+          "additional_instructions": {"type": "string", "required": false, "description": "Additional instructions for LLM categorization"},
+          "batch_size": {"type": "number", "required": false, "default": 5, "description": "Emails to process per batch (max 10 recommended to avoid timeouts)"},
+          "enable_signature_removal": {"type": "boolean", "required": false, "default": true, "description": "Remove email signatures while preserving quoted content"},
+          "generate_thread_summary": {"type": "boolean", "required": false, "default": false, "description": "Generate AI-powered summary for multi-message email threads"},
+          "enable_attachment_processing": {"type": "boolean", "required": false, "default": true, "description": "Process and store attachments in S3 with presigned URLs"},
+          "s3_bucket_name": {"type": "string", "required": false, "description": "S3 bucket for attachment and raw email storage (required if processing attachments or storing raw emails)"},
+          "s3_prefix": {"type": "string", "required": false, "description": "S3 prefix for attachments (auto-generated as email-attachments/{shipper_id}/{date}/ if not provided)"},
+          "extract_attachment_text": {"type": "boolean", "required": false, "default": false, "description": "Extract text from PDF/Excel attachments for use in categorization and data extraction"},
+          "allowed_file_extensions": {"type": "array", "required": false, "default": ["xlsx", "pdf", "csv", "txt", "doc", "docx"], "description": "Allowed attachment file extensions"},
+          "max_attachment_size_mb": {"type": "number", "required": false, "default": 25, "description": "Maximum attachment size in MB"},
+          "presigned_url_expiry_hours": {"type": "number", "required": false, "default": 24, "description": "Hours before S3 presigned URLs expire"},
+          "store_raw_emails": {"type": "boolean", "required": false, "default": true, "description": "Store complete raw email content as JSON files in S3 for compliance/audit"},
+          "raw_email_s3_prefix": {"type": "string", "required": false, "description": "S3 prefix for raw email storage (auto-generated as email-raw/{shipper_id}/{date}/ if not provided)"}
+        }
+      },
+      "returns": {
+        "data": {
+          "processed_emails": {
+            "type": "array",
+            "description": "Array of processed email objects",
+            "structure": {
+              "email_id": "Gmail message ID",
+              "thread_id": "Gmail thread ID",
+              "sender": "Sender email address",
+              "subject": "Email subject",
+              "message": "Processed message content (signature removed)",
+              "received_time": "Timestamp (epoch milliseconds)",
+              "category": "Assigned category from deterministic/LLM categorization",
+              "webhook_url": "Webhook URL called (if enabled)",
+              "attachment_info": {
+                "description": "S3 attachment metadata (if attachments present)",
+                "fields": ["file_name", "s3_attachment_url", "s3_bucket", "s3_key", "attachment_size_mb", "attachment_extracted_text", "content_type"]
+              },
+              "thread_summary": "AI-generated thread summary (if generate_thread_summary=true)",
+              "raw_email_s3_info": {
+                "description": "S3 storage info for raw email JSON",
+                "fields": ["s3_bucket", "s3_key", "s3_url"]
+              }
+            }
+          },
+          "total_processed": {"type": "number", "description": "Count of emails processed in this batch"}
+        },
+        "audit": {"type": "array", "description": "Audit trail with categorization decisions, webhook invocations, and Redis state"}
+      },
+      "api": {
+        "endpoint": "/api/v1/wrapped/email/process",
+        "http_method": "POST",
+        "base_url_env": "ACTION_SERVICE_URL",
+        "authentication": {
+          "type": "Basic",
+          "header": "Authorization",
+          "value_format": "Basic <base64_encoded_credentials>"
+        },
+        "request_format": {
+          "event_data": "Required object with shipper_id, agent_id",
+          "configurations": "Required object with gmail_config, webhook_mapping"
+        },
+        "response_format": {
+          "data": {"processed_emails": "array", "total_processed": "number"},
+          "audit": "array"
+        },
+        "timeout": {"default_seconds": 300},
+        "retry_policy": {"enabled": true, "max_retries": 3, "backoff_seconds": 10}
+      },
+      "prerequisites": ["Gmail OAuth2 credentials with email read access", "Redis for deduplication", "S3 bucket (if processing attachments)", "OpenAI/Anthropic API key (if using LLM categorization)"],
+      "alternatives": ["send_email for outgoing emails", "draft_mail for email composition"],
+      "example_usage": {
+        "description": "Process incoming emails with deterministic and LLM categorization, route to webhooks",
+        "request": {
+          "event_data": {"shipper_id": "test_qa_demo_shipper", "agent_id": "TRACY"},
+          "configurations": {
+            "gmail_config": {
+              "email": "trac-prod@fourkites.com",
+              "client_id": "575876578450-xxx.apps.googleusercontent.com",
+              "client_secret": "GOCSPX-xxx",
+              "refresh_token": "1//xxx"
+            },
+            "webhook_mapping": {
+              "explainability": "https://api.example.com/explain",
+              "shipment_update": "https://api.example.com/shipment",
+              "uncategorized": "https://webhook.site/default"
+            },
+            "enable_webhook_calls": true,
+            "deterministic_conditions": {
+              "explainability": [{"key": "message", "expected_value": "explain", "operator": "contains", "logical_operator": "AND"}]
+            },
+            "category_descriptions": "explainability: Requests for load information\\nshipment_update: Shipment status updates",
+            "s3_bucket_name": "email-attachments-bucket",
+            "extract_attachment_text": true,
+            "generate_thread_summary": true,
+            "store_raw_emails": true
+          }
+        }
+      },
+      "redis_state_management": {
+        "description": "Process emails uses Redis for deduplication and state tracking",
+        "redis_keys": [
+          "email_processed:{email_id} - TTL 7 days - Tracks processed emails to prevent duplicates",
+          "last_email_check_time:{shipper_id}:{gmail_email} - Stores last check timestamp for incremental processing",
+          "email_processing_lock:{shipper_id} - Lock to prevent concurrent processing for same shipper"
+        ],
+        "time_window": "Processes emails from last check time - 3 minutes to current time. 3-minute overlap prevents race conditions.",
+        "troubleshooting": [
+          "Check Redis: redis-cli GET last_email_check_time:{shipper_id}:{email}",
+          "Reset state: redis-cli DEL last_email_check_time:{shipper_id}:{email}",
+          "Check processed: redis-cli GET email_processed:{email_id}"
+        ]
+      },
+      "additional_examples": [
+        {
+          "description": "Safe testing mode - Disable webhooks and test categorization only",
+          "request": {
+            "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY"},
+            "configurations": {
+              "gmail_config": {"email": "test@example.com", "client_id": "...", "client_secret": "...", "refresh_token": "..."},
+              "webhook_mapping": {"shipment_update": "https://webhook.site/test"},
+              "enable_webhook_calls": false,
+              "category_descriptions": "shipment_update: Emails about load updates",
+              "batch_size": 3
+            }
+          }
+        },
+        {
+          "description": "Full featured - Thread summaries, attachment text extraction, raw email storage",
+          "request": {
+            "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY"},
+            "configurations": {
+              "gmail_config": {"email": "support@company.com", "client_id": "...", "client_secret": "...", "refresh_token": "..."},
+              "webhook_mapping": {"shipment_update": "https://api.company.com/updates"},
+              "enable_webhook_calls": true,
+              "generate_thread_summary": true,
+              "extract_attachment_text": true,
+              "store_raw_emails": true,
+              "s3_bucket_name": "company-email-storage",
+              "presigned_url_expiry_hours": 48
+            }
+          }
+        }
+      ]
+    },
+    {
+      "action_name": "extract_data",
+      "class_name": "ExtractData",
+      "method_name": "extract_data",
+      "domain": "Shipment Update",
+      "action_path": "ai_agent_actions.actions.api.v1.wrapped.data_extraction.extract_data",
+      "file_path": "ai_agent_actions/actions/api/v1/wrapped/data_extraction/extract_data.py",
+      "description": "Universal entity-agnostic data extraction from multiple sources (Excel, CSV, text, email, PDF) using hybrid approach: 35+ fine-tuned prompts for common data points + custom descriptions for ad-hoc fields. Supports loads, orders, shipments, inventory, and custom entity types. Features: Smart action tracking, entity detail fetching, ignore rules, and flexible update methods.",
+      "purpose": "Transform unstructured data into structured entities for downstream processing with intelligent field extraction and validation",
+      "when_to_use": "Use after process_emails for text extraction, with file attachments for spreadsheet extraction, or standalone for bulk data processing. Works with any entity type - not just loads.",
+      "parameters": {
+        "event_data": {
+          "shipper_id": {"type": "string", "required": true, "description": "Shipper identifier"},
+          "agent_id": {"type": "string", "required": true, "description": "Agent identifier (TRACY, SAM, ALAN, PETE)"},
+          "parent_request_id": {"type": "string", "required": false, "description": "Request ID for tracking (auto-generated if not provided)"},
+          "attachment_path": {"type": "string", "required": false, "description": "S3 presigned URL or local file path for file-based extraction"},
+          "original_file_name": {"type": "string", "required": false, "description": "Original filename for file type detection"},
+          "message": {"type": "string", "required": false, "description": "Email message or text content for text-based extraction"},
+          "latest_message": {"type": "string", "required": false, "description": "Latest message in email thread (preferred for efficiency)"},
+          "sender": {"type": "string", "required": false, "description": "Email sender for context"},
+          "subject": {"type": "string", "required": false, "description": "Email subject for context"}
+        },
+        "configurations": {
+          "data_points": {"type": "array", "required": true, "description": "Array of data points to extract. Can be strings (uses fine-tuned prompts) or objects with {name, description, force_custom}. 35+ fine-tuned options: load_number, tracking_id, pro_number, pickup_date, delivery_date, pickup_eta, delivery_eta, pickup_appointment, delivery_appointment, origin_address, destination_address, driver_name, driver_phone, driver_email, truck_number, trailer_number, seal_number, carrier_scac, reason, load_status, stop_status, temperature, weight, dimensions, commodity, special_instructions, pickup_contact_name, delivery_contact_name, pickup_contact_phone, delivery_contact_phone, lrc_code, comments, tags, customer_reference"},
+          "entity_config": {
+            "type": "object",
+            "required": false,
+            "description": "Entity configuration",
+            "fields": {
+              "entity_type": {"type": "string", "default": "load", "description": "Entity type: load, order, shipment, inventory, custom"},
+              "entity_identifier_fields": {"type": "array", "default": ["load_number"], "description": "Fields used to identify entities (e.g., ['load_number'], ['order_id', 'line_number'])"},
+              "enable_entity_updates": {"type": "boolean", "default": true, "description": "Fetch entity details and apply updates"},
+              "update_method": {"type": "string", "default": "comment", "description": "Update method: comment, api, webhook, none"},
+              "apply_ignore_rules": {"type": "boolean", "default": true, "description": "Apply ignore rules to filter entities"}
+            }
+          },
+          "file_type": {"type": "string", "required": false, "default": "auto", "description": "File type: auto, excel_v1, excel_v2, csv, pdf, bulk_shipment. Auto-detects from extension"},
+          "source_type": {"type": "string", "required": false, "default": "file", "description": "Source type: file, text, email"},
+          "extraction_context": {"type": "string", "required": false, "description": "Override extraction context: text_latest_message, text_email_thread, bulk_shipment, appointment_scheduling, usps"},
+          "enable_retry": {"type": "boolean", "required": false, "default": true, "description": "Enable retry logic for file operations"},
+          "max_retries": {"type": "number", "required": false, "default": 3, "description": "Maximum retry attempts (0-5)"},
+          "enable_validation": {"type": "boolean", "required": false, "default": true, "description": "Enable file structure validation"},
+          "batch_size": {"type": "number", "required": false, "default": 5, "description": "Batch size for entity processing (1-50)"},
+          "enable_smart_action": {"type": "boolean", "required": false, "default": true, "description": "Enable smart action tracking"},
+          "smart_action_type": {"type": "string", "required": false, "description": "Override smart action type (auto-detected from context if not provided)"}
+        }
+      },
+      "returns": {
+        "extracted_entities": {"type": "array", "description": "Array of extracted entity objects with {entity_id, entity_type, extracted_fields, validation_status, validation_errors, update_status, update_message, metadata}"},
+        "total_extracted": {"type": "number", "description": "Total number of entities extracted"},
+        "total_updated": {"type": "number", "description": "Number of entities successfully updated"},
+        "total_failed": {"type": "number", "description": "Number of entities that failed to update"},
+        "total_skipped": {"type": "number", "description": "Number of entities skipped due to ignore rules"},
+        "processing_time_ms": {"type": "number", "description": "Processing time in milliseconds"}
+      },
+      "api": {
+        "endpoint": "/api/v1/wrapped/data_extraction/extract_data",
+        "http_method": "POST",
+        "base_url_env": "ACTION_SERVICE_URL",
+        "authentication": {
+          "type": "Basic",
+          "header": "Authorization",
+          "value_format": "Basic <base64_encoded_credentials>"
+        },
+        "request_format": {
+          "event_data": "Required object with shipper_id, agent_id, and source data (attachment_path for files, message/latest_message for text)",
+          "configurations": "Required object with data_points array and optional entity_config"
+        },
+        "response_format": {
+          "extracted_entities": "array of entity objects",
+          "total_extracted": "number",
+          "total_updated": "number",
+          "total_failed": "number",
+          "total_skipped": "number",
+          "processing_time_ms": "number",
+          "audit": "array"
+        },
+        "timeout": {"default_seconds": 120},
+        "retry_policy": {"enabled": true, "max_retries": 3, "backoff_seconds": 10}
+      },
+      "prerequisites": ["Source data (file attachment or text/email content)", "Data points list (fine-tuned or custom)", "OpenAI/Anthropic API key", "FourKites tracking API access (if updating entities)"],
+      "alternatives": ["fourkites_llm actions for specialized extraction", "Manual parsing for simple structured formats"],
+      "example_usage": {
+        "description": "Extract shipment update from email using fine-tuned prompts",
+        "request": {
+          "event_data": {
+            "shipper_id": "shipper-123",
+            "agent_id": "TRACY",
+            "latest_message": "The load LOAD123 is delayed. New ETA is Jan 15th. Driver John Smith (555-1234) had truck breakdown.",
+            "sender": "carrier@example.com",
+            "subject": "Load Update Required"
+          },
+          "configurations": {
+            "data_points": ["load_number", "delivery_eta", "reason", "driver_name", "driver_phone"],
+            "entity_config": {
+              "entity_type": "load",
+              "entity_identifier_fields": ["load_number"],
+              "enable_entity_updates": true,
+              "update_method": "comment"
+            },
+            "source_type": "text"
+          }
+        }
+      },
+      "additional_examples": [
+        {
+          "description": "Extract from Excel file with custom data point",
+          "request": {
+            "event_data": {
+              "shipper_id": "shipper-123",
+              "agent_id": "TRACY",
+              "attachment_path": "https://s3.amazonaws.com/bucket/file.xlsx",
+              "original_file_name": "shipments.xlsx"
+            },
+            "configurations": {
+              "data_points": [
+                "load_number",
+                "pickup_date",
+                "delivery_date",
+                {"name": "shipper_reference", "description": "Extract the customer reference or PO number from any column"},
+                {"name": "special_equipment", "description": "Extract any mentions of refrigeration, flatbed, or special equipment requirements"}
+              ],
+              "file_type": "excel_v2",
+              "entity_config": {
+                "entity_type": "load",
+                "enable_entity_updates": false
+              }
+            }
+          }
+        },
+        {
+          "description": "Extract custom entity type (inventory)",
+          "request": {
+            "event_data": {
+              "shipper_id": "warehouse-456",
+              "agent_id": "SAM",
+              "attachment_path": "file:///local/path/inventory.csv"
+            },
+            "configurations": {
+              "data_points": [
+                {"name": "sku", "description": "Product SKU or item number"},
+                {"name": "quantity", "description": "Current quantity in stock"},
+                {"name": "location", "description": "Warehouse location or bin number"},
+                {"name": "reorder_point", "description": "Minimum quantity before reorder"}
+              ],
+              "file_type": "csv",
+              "entity_config": {
+                "entity_type": "inventory",
+                "entity_identifier_fields": ["sku"],
+                "enable_entity_updates": false
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "action_name": "load_update",
+      "class_name": "LoadUpdate",
+      "method_name": "trigger_load_update_actions",
+      "domain": "Shipment Update",
+      "action_path": "ai_agent_actions.actions.api.v1.fourkites_visibility.load_update",
+      "file_path": "ai_agent_actions/actions/api/v1/fourkites_visibility/load_update.py",
+      "description": "Update load-level information in FourKites visibility platform including assets (truck/trailer numbers), carrier contacts, driver info, latest location, reasons/comments, LRC codes, tags, and load status (pickup incomplete, relay, delivered, etc.).",
+      "purpose": "Apply extracted shipment updates to loads in the FourKites platform",
+      "when_to_use": "Use after extract_data to apply extracted information to loads. Supports bulk updates and tracks completion status per load.",
+      "parameters": {
+        "event_data": {
+          "shipper_id": {"type": "string", "required": true, "description": "Shipper identifier"},
+          "agent_id": {"type": "string", "required": true, "description": "Agent identifier"},
+          "parent_request_id": {"type": "string", "required": true, "description": "Request ID"},
+          "workflow_id": {"type": "string", "required": true, "description": "Workflow ID"}
+        },
+        "configurations": {
+          "is_smart_action": {"type": "boolean", "required": false, "default": false, "description": "Enable smart action tracking"}
+        },
+        "data": {
+          "extracted_data": {"type": "array", "required": true, "description": "Array of extracted data objects with load updates"}
+        }
+      },
+      "returns": {
+        "completed_update_tracker": {"type": "object", "description": "Loads with successfully completed updates"},
+        "failed_update_tracker": {"type": "object", "description": "Loads with failed updates and error details"},
+        "audit": {"type": "array", "description": "Audit trail"}
+      },
+      "api": {
+        "endpoint": "/api/v1/fourkites_visibility/load_update",
+        "http_method": "POST",
+        "base_url_env": "ACTION_SERVICE_URL",
+        "authentication": {
+          "type": "Basic",
+          "header": "Authorization",
+          "value_format": "Basic <base64_encoded_credentials>"
+        },
+        "request_format": {
+          "event_data": "Required object",
+          "configurations": "Optional object",
+          "data": "Required object with extracted_data array"
+        },
+        "response_format": {
+          "completed_update_tracker": "object",
+          "failed_update_tracker": "object",
+          "audit": "array"
+        },
+        "timeout": {"default_seconds": 180},
+        "retry_policy": {"enabled": true, "max_retries": 3, "backoff_seconds": 10}
+      },
+      "prerequisites": ["Extracted data with load updates", "Valid load numbers", "FourKites visibility API access"],
+      "alternatives": ["load_stop_update for stop-level updates", "individual update helpers for specific fields"],
+      "example_usage": {
+        "description": "Update multiple loads with extracted information",
+        "request": {
+          "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY", "parent_request_id": "req-456", "workflow_id": "wf-789"},
+          "data": {
+            "extracted_data": [
+              {
+                "load_number": "LOAD001",
+                "truckNumber": "TRK123",
+                "trailerNumber": "TRL456",
+                "driver_name": "John Doe",
+                "driver_phone": "555-1234"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "action_name": "load_stop_update",
+      "class_name": "LoadStopUpdate",
+      "method_name": "trigger_load_stop_update_actions",
+      "domain": "Shipment Update",
+      "action_path": "ai_agent_actions.actions.api.v1.fourkites_visibility.load_stop_update",
+      "file_path": "ai_agent_actions/actions/api/v1/fourkites_visibility/load_stop_update.py",
+      "description": "Update stop-level information in FourKites visibility platform including current status, ETAs (load-level and stop-level), pickup/delivery appointment times, and messages. Supports both pickup and delivery stop updates.",
+      "purpose": "Update time-sensitive stop information like ETAs and appointment times",
+      "when_to_use": "Use after extract_data when you have ETA changes or appointment time updates for specific stops (pickup or delivery).",
+      "parameters": {
+        "event_data": {
+          "shipper_id": {"type": "string", "required": true, "description": "Shipper identifier"},
+          "agent_id": {"type": "string", "required": true, "description": "Agent identifier"},
+          "parent_request_id": {"type": "string", "required": true, "description": "Request ID"},
+          "workflow_id": {"type": "string", "required": true, "description": "Workflow ID"}
+        },
+        "configurations": {
+          "is_smart_action": {"type": "boolean", "required": false, "default": false, "description": "Enable smart action tracking"}
+        },
+        "data": {
+          "extracted_data": {"type": "array", "required": true, "description": "Array of extracted data with stop updates (ETAs, appointment times)"}
+        }
+      },
+      "returns": {
+        "completed_update_tracker": {"type": "object", "description": "Stops with successfully completed updates"},
+        "failed_update_tracker": {"type": "object", "description": "Stops with failed updates"},
+        "audit": {"type": "array", "description": "Audit trail"}
+      },
+      "api": {
+        "endpoint": "/api/v1/fourkites_visibility/load_stop_update",
+        "http_method": "POST",
+        "base_url_env": "ACTION_SERVICE_URL",
+        "authentication": {
+          "type": "Basic",
+          "header": "Authorization",
+          "value_format": "Basic <base64_encoded_credentials>"
+        },
+        "request_format": {
+          "event_data": "Required object",
+          "configurations": "Optional object",
+          "data": "Required object with extracted_data"
+        },
+        "response_format": {
+          "completed_update_tracker": "object",
+          "failed_update_tracker": "object",
+          "audit": "array"
+        },
+        "timeout": {"default_seconds": 120},
+        "retry_policy": {"enabled": true, "max_retries": 3, "backoff_seconds": 10}
+      },
+      "prerequisites": ["Extracted data with stop updates", "Valid load numbers", "FourKites visibility API access"],
+      "alternatives": ["load_update for load-level updates"],
+      "example_usage": {
+        "description": "Update delivery ETA for multiple loads",
+        "request": {
+          "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY", "parent_request_id": "req-456", "workflow_id": "wf-789"},
+          "data": {
+            "extracted_data": [
+              {
+                "load_number": "LOAD001",
+                "delivery_eta": "2025-02-01T14:00:00Z",
+                "stop_type": "delivery"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "action_name": "update_milestones",
+      "class_name": "UpdateMilestones",
+      "method_name": "update_milestones",
+      "domain": "Shipment Update",
+      "action_path": "ai_agent_actions.actions.api.v1.milestones.update_milestones",
+      "file_path": "ai_agent_actions/actions/api/v1/milestones/update_milestones.py",
+      "description": "Update milestone status and metadata for loads. Milestones track workflow progress and communication status (awaiting_response, escalation_l1_sent, response_received, etc.).",
+      "purpose": "Track workflow progress and communication status for loads",
+      "when_to_use": "Use to update milestone status after completing workflow steps or receiving responses. Essential for escalation workflows to track communication history.",
+      "parameters": {
+        "event_data": {
+          "shipper_id": {"type": "string", "required": true, "description": "Shipper identifier"},
+          "agent_id": {"type": "string", "required": true, "description": "Agent identifier"},
+          "parent_request_id": {"type": "string", "required": true, "description": "Request ID"},
+          "workflow_id": {"type": "string", "required": true, "description": "Workflow ID"}
+        },
+        "configurations": {
+          "request_workflow_id": {"type": "string", "required": true, "description": "Workflow ID to associate with milestone"},
+          "update_params": {
+            "type": "object",
+            "required": true,
+            "description": "Milestone update parameters",
+            "fields": {
+              "status": {"type": "string", "description": "New milestone status"},
+              "comments": {"type": "string", "description": "Milestone comments"},
+              "last_communication_time": {"type": "number", "description": "Timestamp of last communication"}
+            }
+          },
+          "is_smart_action": {"type": "boolean", "required": false, "default": false, "description": "Enable smart action tracking"}
+        },
+        "data": {
+          "scac_load_dict": {"type": "object", "required": true, "description": "Load data keyed by SCAC"}
+        }
+      },
+      "returns": {
+        "updated_milestones": {"type": "array", "description": "Array of updated milestone records"},
+        "audit": {"type": "array", "description": "Audit trail"}
+      },
+      "api": {
+        "endpoint": "/api/v1/milestones/update_milestones",
+        "http_method": "POST",
+        "base_url_env": "ACTION_SERVICE_URL",
+        "authentication": {
+          "type": "Basic",
+          "header": "Authorization",
+          "value_format": "Basic <base64_encoded_credentials>"
+        },
+        "request_format": {
+          "event_data": "Required object",
+          "configurations": "Required object with update_params",
+          "data": "Required object with scac_load_dict"
+        },
+        "response_format": {
+          "updated_milestones": "array",
+          "audit": "array"
+        },
+        "timeout": {"default_seconds": 90},
+        "retry_policy": {"enabled": true, "max_retries": 3, "backoff_seconds": 5}
+      },
+      "prerequisites": ["Valid load data", "FourKites milestones API access"],
+      "alternatives": ["insert_milestones for creating new milestones", "get_milestones for querying milestones"],
+      "example_usage": {
+        "description": "Update milestone status to response_received",
+        "request": {
+          "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY", "parent_request_id": "req-456", "workflow_id": "wf-789"},
+          "configurations": {
+            "request_workflow_id": "escalation_wf",
+            "update_params": {
+              "status": "response_received",
+              "comments": "Carrier responded with updated ETA"
+            }
+          },
+          "data": {"scac_load_dict": "object from previous actions"}
+        }
+      }
+    },
+    {
+      "action_name": "add_smart_action",
+      "class_name": "AddSmartAction",
+      "method_name": "add_smart_action",
+      "domain": "Shipment Update",
+      "action_path": "ai_agent_actions.actions.api.v1.milestones.add_smart_action",
+      "file_path": "ai_agent_actions/actions/api/v1/milestones/add_smart_action.py",
+      "description": "Create smart action tracking records for loads or other entities. Smart actions provide visibility into automated actions taken by AI agents.",
+      "purpose": "Track automated actions for audit trail and visibility",
+      "when_to_use": "Use at the start of an automated action to create tracking record. Can track multiple entities (loads) with a single smart action.",
+      "parameters": {
+        "event_data": {
+          "shipper_id": {"type": "string", "required": true, "description": "Shipper identifier"},
+          "agent_id": {"type": "string", "required": true, "description": "Agent identifier"},
+          "parent_request_id": {"type": "string", "required": true, "description": "Request ID"},
+          "workflow_id": {"type": "string", "required": true, "description": "Workflow ID"}
+        },
+        "configurations": {
+          "status": {"type": "string", "required": true, "description": "Smart action status: PENDING, IN_PROGRESS, COMPLETED, FAILED, FLAGGED FOR REVIEW"},
+          "smart_action_metadata": {"type": "object", "required": false, "description": "Additional metadata for smart action"},
+          "entity_type": {"type": "string", "required": false, "description": "Entity type: LOAD, SHIPMENT, etc. (optional)"},
+          "entity_id_list": {"type": "array", "required": false, "description": "List of entity IDs to track"}
+        }
+      },
+      "returns": {
+        "smart_action_data": {"type": "object", "description": "Created smart action tracking data"},
+        "audit": {"type": "array", "description": "Audit trail"}
+      },
+      "api": {
+        "endpoint": "/api/v1/milestones/add_smart_action",
+        "http_method": "POST",
+        "base_url_env": "ACTION_SERVICE_URL",
+        "authentication": {
+          "type": "Basic",
+          "header": "Authorization",
+          "value_format": "Basic <base64_encoded_credentials>"
+        },
+        "request_format": {
+          "event_data": "Required object",
+          "configurations": "Required object with status"
+        },
+        "response_format": {
+          "smart_action_data": "object",
+          "audit": "array"
+        },
+        "timeout": {"default_seconds": 30},
+        "retry_policy": {"enabled": true, "max_retries": 2, "backoff_seconds": 5}
+      },
+      "prerequisites": ["FourKites smart actions API access"],
+      "alternatives": ["update_smart_action for updating existing smart actions"],
+      "example_usage": {
+        "description": "Create smart action tracking for load update workflow",
+        "request": {
+          "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY", "parent_request_id": "req-456", "workflow_id": "wf-789"},
+          "configurations": {
+            "status": "IN_PROGRESS",
+            "entity_type": "LOAD",
+            "entity_id_list": ["LOAD001", "LOAD002"]
+          }
+        }
+      }
+    },
+    {
+      "action_name": "update_smart_action",
+      "class_name": "UpdateSmartAction",
+      "method_name": "update_smart_action",
+      "domain": "Shipment Update",
+      "action_path": "ai_agent_actions.actions.api.v1.milestones.update_smart_action",
+      "file_path": "ai_agent_actions/actions/api/v1/milestones/update_smart_action.py",
+      "description": "Update status of existing smart action tracking records. Typically used to mark actions as COMPLETED or FAILED.",
+      "purpose": "Update smart action status to reflect workflow completion",
+      "when_to_use": "Use at the end of an automated action to update status. Relies on smart_action_data in state from add_smart_action.",
+      "parameters": {
+        "event_data": {
+          "shipper_id": {"type": "string", "required": true, "description": "Shipper identifier"},
+          "agent_id": {"type": "string", "required": true, "description": "Agent identifier"},
+          "parent_request_id": {"type": "string", "required": true, "description": "Request ID"},
+          "workflow_id": {"type": "string", "required": true, "description": "Workflow ID"}
+        },
+        "data": {
+          "smart_action_data": {"type": "object", "required": true, "description": "Smart action data from add_smart_action (automatically populated)"}
+        }
+      },
+      "returns": {
+        "smart_action_data": {"type": "object", "description": "Updated smart action data"},
+        "audit": {"type": "array", "description": "Audit trail"}
+      },
+      "api": {
+        "endpoint": "/api/v1/milestones/update_smart_action",
+        "http_method": "POST",
+        "base_url_env": "ACTION_SERVICE_URL",
+        "authentication": {
+          "type": "Basic",
+          "header": "Authorization",
+          "value_format": "Basic <base64_encoded_credentials>"
+        },
+        "request_format": {
+          "event_data": "Required object",
+          "data": "Required object with smart_action_data from add_smart_action"
+        },
+        "response_format": {
+          "smart_action_data": "object",
+          "audit": "array"
+        },
+        "timeout": {"default_seconds": 30},
+        "retry_policy": {"enabled": true, "max_retries": 2, "backoff_seconds": 5}
+      },
+      "prerequisites": ["Smart action created via add_smart_action", "smart_action_data in state"],
+      "alternatives": ["add_smart_action for creating new smart actions"],
+      "example_usage": {
+        "description": "Mark smart action as completed",
+        "request": {
+          "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY", "parent_request_id": "req-456", "workflow_id": "wf-789"},
+          "data": {"smart_action_data": "object from add_smart_action"}
+        }
+      }
+    },
+    {
+      "action_name": "get_escalation_milestones",
+      "class_name": "GetEscalationMilestones",
+      "method_name": "get_escalation_milestones",
+      "domain": "Escalation",
+      "action_path": "ai_agent_actions.actions.api.v1.milestones.get_escalation_milestones",
+      "file_path": "ai_agent_actions/actions/api/v1/milestones/get_escalation_milestones.py",
+      "description": "Retrieve milestones that need escalation based on status (awaiting_response or escalation_l1_sent) and time elapsed since last communication. Filters by workflow IDs and duration thresholds for level 1 and level 2 escalations.",
+      "purpose": "Find loads requiring escalation based on time elapsed without response",
+      "when_to_use": "Use in scheduled escalation workflows to identify loads that need follow-up emails. Typically triggered by cron jobs.",
+      "parameters": {
+        "configurations": {
+          "shipper_id": {"type": "string", "required": true, "description": "Shipper identifier"},
+          "agent_id": {"type": "string", "required": true, "description": "Agent identifier"},
+          "workflow_id": {"type": "string", "required": true, "description": "Escalation workflow ID"},
+          "cron_start_time": {"type": "number", "required": true, "description": "Cron job start timestamp (seconds)"},
+          "escalation_enabled_workflow_ids": {"type": "array", "required": true, "description": "List of workflow IDs to check for escalation"},
+          "escalation_level_1_duration": {"type": "number", "required": false, "default": 3600, "description": "Seconds to wait before L1 escalation"},
+          "escalation_level_2_duration": {"type": "number", "required": false, "default": 3600, "description": "Seconds to wait before L2 escalation"},
+          "ignore_actions": {"type": "object", "required": false, "description": "Conditions to ignore certain loads from escalation"},
+          "is_smart_action": {"type": "boolean", "required": false, "default": false, "description": "Enable smart action tracking"}
+        }
+      },
+      "returns": {
+        "escalation_milestones": {"type": "array", "description": "Array of milestones requiring escalation"},
+        "scac_load_dict": {"type": "object", "description": "Load data grouped by SCAC with milestone info"},
+        "audit": {"type": "array", "description": "Audit trail"}
+      },
+      "api": {
+        "endpoint": "/api/v1/milestones/get_escalation_milestones",
+        "http_method": "POST",
+        "base_url_env": "ACTION_SERVICE_URL",
+        "authentication": {
+          "type": "Basic",
+          "header": "Authorization",
+          "value_format": "Basic <base64_encoded_credentials>"
+        },
+        "request_format": {
+          "configurations": "Required object with shipper_id, cron_start_time, escalation_enabled_workflow_ids"
+        },
+        "response_format": {
+          "escalation_milestones": "array",
+          "scac_load_dict": "object",
+          "audit": "array"
+        },
+        "timeout": {"default_seconds": 180},
+        "retry_policy": {"enabled": true, "max_retries": 2, "backoff_seconds": 10}
+      },
+      "prerequisites": ["Existing milestones in awaiting_response or escalation_l1_sent status", "FourKites milestones API access", "FourKites tracking API access"],
+      "alternatives": ["get_milestones for general milestone queries"],
+      "example_usage": {
+        "description": "Find loads needing L1 or L2 escalation",
+        "request": {
+          "configurations": {
+            "shipper_id": "shipper-123",
+            "agent_id": "TRACY",
+            "workflow_id": "escalation_wf",
+            "cron_start_time": 1706745600,
+            "escalation_enabled_workflow_ids": ["late_load_followup"],
+            "escalation_level_1_duration": 7200,
+            "escalation_level_2_duration": 14400
+          }
+        }
+      }
+    },
+    {
+      "action_name": "draft_escalation_mail",
+      "class_name": "DraftEscalationMail",
+      "method_name": "draft_escalation_mail",
+      "domain": "Escalation",
+      "action_path": "ai_agent_actions.actions.api.v1.email.draft_escalation_mail",
+      "file_path": "ai_agent_actions/actions/api/v1/email/draft_escalation_mail.py",
+      "description": "Generate escalation email drafts based on milestone data and previous email threads. Uses the original email thread as context and creates appropriate escalation messages for L1 or L2 escalations. Groups milestones by source_id (original email thread) for context-aware escalation.",
+      "purpose": "Create professional escalation emails that reference original communication and milestone status",
+      "when_to_use": "Use after get_escalation_milestones to draft escalation emails. Requires Gmail OAuth for reading original email threads.",
+      "parameters": {
+        "configurations": {
+          "shipper_id": {"type": "string", "required": true, "description": "Shipper identifier"},
+          "agent_id": {"type": "string", "required": true, "description": "Agent identifier"},
+          "workflow_id": {"type": "string", "required": true, "description": "Escalation workflow ID"},
+          "parent_request_id": {"type": "string", "required": true, "description": "Request ID"},
+          "auth_token": {"type": "string", "required": true, "description": "Gmail OAuth token for reading threads"},
+          "additional_email_content": {"type": "string", "required": false, "description": "Additional content to include in escalation email"},
+          "is_smart_action": {"type": "boolean", "required": false, "default": false, "description": "Enable smart action tracking"}
+        },
+        "data": {
+          "escalation_milestones": {"type": "array", "required": true, "description": "Escalation milestones from get_escalation_milestones"}
+        }
+      },
+      "returns": {
+        "milestones_for_source_id": {"type": "object", "description": "Milestones grouped by source_id with email_draft field added"},
+        "audit": {"type": "array", "description": "Audit trail"}
+      },
+      "api": {
+        "endpoint": "/api/v1/email/draft_escalation_mail",
+        "http_method": "POST",
+        "base_url_env": "ACTION_SERVICE_URL",
+        "authentication": {
+          "type": "Basic",
+          "header": "Authorization",
+          "value_format": "Basic <base64_encoded_credentials>"
+        },
+        "request_format": {
+          "configurations": "Required object with auth_token",
+          "data": "Required object with escalation_milestones"
+        },
+        "response_format": {
+          "milestones_for_source_id": "object with email_draft added",
+          "audit": "array"
+        },
+        "timeout": {"default_seconds": 120},
+        "retry_policy": {"enabled": true, "max_retries": 2, "backoff_seconds": 10}
+      },
+      "prerequisites": ["Escalation milestones from get_escalation_milestones", "Gmail OAuth token with email read access", "Original email threads accessible"],
+      "alternatives": ["send_email for new email threads (not escalations)", "draft_mail for general purpose email drafting"],
+      "example_usage": {
+        "description": "Draft escalation emails for milestones needing follow-up",
+        "request": {
+          "configurations": {
+            "shipper_id": "shipper-123",
+            "agent_id": "TRACY",
+            "workflow_id": "escalation_wf",
+            "parent_request_id": "req-456",
+            "auth_token": "ya29.xxx"
+          },
+          "data": {"escalation_milestones": "array from get_escalation_milestones"}
+        }
+      }
+    },
+    {
+      "action_name": "load_get_details",
+      "class_name": "GetLoadDetails",
+      "method_name": "get_load_details",
+      "domain": "Escalation",
+      "action_path": "ai_agent_actions.actions.api.v1.fourkites_visibility.load_get_details",
+      "file_path": "ai_agent_actions/actions/api/v1/fourkites_visibility/load_get_details.py",
+      "description": "Retrieve detailed load information from FourKites visibility platform by load numbers. Supports partial matching or exact matching. Returns load data in scac_load_dict format with essential fields (tracking_id, load_number, shipper/carrier info) and full load objects.",
+      "purpose": "Get current load details for escalation context or status verification",
+      "when_to_use": "Use to fetch load details by load numbers for escalation emails or to verify current load status. Supports exact_match flag to filter out partial matches.",
+      "parameters": {
+        "event_data": {
+          "shipper_id": {"type": "string", "required": true, "description": "Shipper identifier"},
+          "agent_id": {"type": "string", "required": true, "description": "Agent identifier"},
+          "parent_request_id": {"type": "string", "required": true, "description": "Request ID"},
+          "workflow_id": {"type": "string", "required": true, "description": "Workflow ID"}
+        },
+        "configurations": {
+          "load_numbers": {"type": "array or string", "required": true, "description": "Load number(s) to fetch"},
+          "exact_match": {"type": "boolean", "required": false, "default": false, "description": "If true, only return exact load number matches"},
+          "is_smart_action": {"type": "boolean", "required": false, "default": false, "description": "Enable smart action tracking"}
+        }
+      },
+      "returns": {
+        "scac_load_dict": {"type": "object", "description": "Load data grouped by SCAC with essential fields"},
+        "load_objects": {"type": "object", "description": "Complete load objects keyed by load_number"},
+        "audit": {"type": "array", "description": "Audit trail"}
+      },
+      "api": {
+        "endpoint": "/api/v1/fourkites_visibility/load_get_details",
+        "http_method": "POST",
+        "base_url_env": "ACTION_SERVICE_URL",
+        "authentication": {
+          "type": "Basic",
+          "header": "Authorization",
+          "value_format": "Basic <base64_encoded_credentials>"
+        },
+        "request_format": {
+          "event_data": "Required object",
+          "configurations": "Required object with load_numbers"
+        },
+        "response_format": {
+          "scac_load_dict": "object",
+          "load_objects": "object",
+          "audit": "array"
+        },
+        "timeout": {"default_seconds": 60},
+        "retry_policy": {"enabled": true, "max_retries": 3, "backoff_seconds": 5}
+      },
+      "prerequisites": ["Valid load numbers", "FourKites tracking API access"],
+      "alternatives": ["load_search_trigger for searching loads by criteria", "search_shipments_by_number in tracking client"],
+      "example_usage": {
+        "description": "Get load details for specific load numbers",
+        "request": {
+          "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY", "parent_request_id": "req-456", "workflow_id": "wf-789"},
+          "configurations": {
+            "load_numbers": ["LOAD001", "LOAD002"],
+            "exact_match": true
+          }
+        }
+      }
+    },
+    {
+      "action_name": "retrieve_escalation_contacts_v2",
+      "class_name": "RetrieveEscalationContactsV2",
+      "method_name": "retrieve_escalation_contacts_v2",
+      "domain": "Escalation",
+      "action_path": "ai_agent_actions.actions.api.v1.fourkites_platform.retreive_escalation_contacts_v2",
+      "file_path": "ai_agent_actions/actions/api/v1/fourkites_platform/retreive_escalation_contacts_v2.py",
+      "description": "Retrieve escalation contacts from FourKites contact management system based on milestone status. For awaiting_response milestones, retrieves L2 carrier contacts. For escalation_l1_sent milestones, retrieves L3 shipper contacts. Filters contacts by level (is_level_2, is_level_3) and validates email addresses.",
+      "purpose": "Get appropriate escalation contacts based on escalation level",
+      "when_to_use": "Use after draft_escalation_mail to retrieve email addresses for sending escalation emails. Automatically handles L1→L2 (carrier) and L2→L3 (shipper) escalation paths.",
+      "parameters": {
+        "event_data": {
+          "shipper_id": {"type": "string", "required": true, "description": "Shipper identifier"},
+          "agent_id": {"type": "string", "required": true, "description": "Agent identifier"},
+          "parent_request_id": {"type": "string", "required": true, "description": "Request ID"},
+          "workflow_id": {"type": "string", "required": true, "description": "Workflow ID"}
+        },
+        "configurations": {
+          "connect_from_role": {"type": "string", "required": true, "description": "From role: 'shipper', 'carrier', or 'customer'"},
+          "connect_to_role": {"type": "string", "required": true, "description": "To role: 'shipper', 'carrier', or 'customer'"},
+          "connect_from_id": {"type": "string", "required": false, "description": "From entity ID (extracted from milestones if not provided)"},
+          "connect_to_id": {"type": "string", "required": false, "description": "To entity ID (extracted from milestones if not provided)"},
+          "network_identifier_key": {"type": "string", "required": false, "description": "Network identifier key (e.g., 'scac', 'carrier_id')"},
+          "network_identifier_value": {"type": "string", "required": false, "description": "Network identifier value (extracted from milestones if not provided)"},
+          "to_levels": {"type": "array", "required": false, "description": "Contact levels to retrieve (e.g., ['is_level_2'])"},
+          "scope_identifier": {"type": "string", "required": false, "description": "Scope identifier for contact filtering"},
+          "scope_identifier_value": {"type": "string", "required": false, "description": "Scope identifier value"},
+          "is_smart_action": {"type": "boolean", "required": false, "default": false, "description": "Enable smart action tracking"}
+        },
+        "data": {
+          "milestones_for_source_id": {"type": "object", "required": true, "description": "Milestones grouped by source_id from draft_escalation_mail"}
+        }
+      },
+      "returns": {
+        "milestones_for_source_id": {"type": "object", "description": "Milestones with email_recipients field added"},
+        "audit": {"type": "array", "description": "Audit trail"}
+      },
+      "api": {
+        "endpoint": "/api/v1/fourkites_platform/retrieve_escalation_contacts_v2",
+        "http_method": "POST",
+        "base_url_env": "ACTION_SERVICE_URL",
+        "authentication": {
+          "type": "Basic",
+          "header": "Authorization",
+          "value_format": "Basic <base64_encoded_credentials>"
+        },
+        "request_format": {
+          "event_data": "Required object",
+          "configurations": "Required object with connect roles",
+          "data": "Required object with milestones_for_source_id"
+        },
+        "response_format": {
+          "milestones_for_source_id": "object with email_recipients added",
+          "audit": "array"
+        },
+        "timeout": {"default_seconds": 90},
+        "retry_policy": {"enabled": true, "max_retries": 3, "backoff_seconds": 5}
+      },
+      "prerequisites": ["Milestones with email drafts from draft_escalation_mail", "FourKites contacts API access", "Valid carrier_id or SCAC in milestones"],
+      "alternatives": ["retrieve_contacts_v2 for general contact retrieval"],
+      "example_usage": {
+        "description": "Retrieve L2 carrier contacts for escalation emails",
+        "request": {
+          "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY", "parent_request_id": "req-456", "workflow_id": "escalation_wf"},
+          "configurations": {
+            "connect_from_role": "shipper",
+            "connect_to_role": "carrier",
+            "network_identifier_key": "carrier_id"
+          },
+          "data": {"milestones_for_source_id": "object from draft_escalation_mail"}
+        }
+      }
+    },
+    {
+      "action_name": "send_escalation_mail_loop",
+      "class_name": "SendEmail",
+      "method_name": "execute",
+      "domain": "Escalation",
+      "action_path": "ai_agent_actions.actions.api.v1.wrapped.communications.send_email",
+      "file_path": "ai_agent_actions/actions/api/v1/wrapped/communications/send_email.py",
+      "description": "Send escalation emails in a loop for each milestone/source_id. Uses email drafts and recipient lists from previous escalation steps. Should be called in a loop node in LangGraph to send one email per source_id.",
+      "purpose": "Actually send the drafted escalation emails to retrieved contacts",
+      "when_to_use": "Use after retrieve_escalation_contacts_v2 in a loop to send escalation emails. Each iteration sends email for one source_id/thread.",
+      "parameters": {
+        "event_data": {
+          "shipper_id": {"type": "string", "required": true, "description": "Shipper identifier"},
+          "agent_id": {"type": "string", "required": true, "description": "Agent identifier"}
+        },
+        "configurations": {
+          "use_llm_generation": {"type": "boolean", "required": false, "default": false, "description": "Set to false to use pre-drafted email"},
+          "email_template": {"type": "string", "required": true, "description": "Email HTML from draft_escalation_mail"},
+          "email_subject": {"type": "string", "required": true, "description": "Email subject for escalation"},
+          "custom_recipients": {"type": "array", "required": true, "description": "Email addresses from retrieve_escalation_contacts_v2"},
+          "track_milestone": {"type": "boolean", "required": false, "default": true, "description": "Track email as milestone"}
+        }
+      },
+      "returns": {
+        "email_send_results": {"type": "object", "description": "Send results with status, recipients, message_id"},
+        "sent_mail_thread_id": {"type": "string", "description": "Gmail thread ID of sent email"},
+        "mail_sent_time": {"type": "number", "description": "Timestamp when email was sent"},
+        "audit": {"type": "array", "description": "Audit trail"}
+      },
+      "api": {
+        "endpoint": "/api/v1/wrapped/communications/send_email",
+        "http_method": "POST",
+        "base_url_env": "ACTION_SERVICE_URL",
+        "authentication": {
+          "type": "Basic",
+          "header": "Authorization",
+          "value_format": "Basic <base64_encoded_credentials>"
+        },
+        "request_format": {
+          "event_data": "Required object",
+          "configurations": "Required object with email_template, custom_recipients"
+        },
+        "response_format": {
+          "email_send_results": "object",
+          "sent_mail_thread_id": "string",
+          "mail_sent_time": "number",
+          "audit": "array"
+        },
+        "timeout": {"default_seconds": 180},
+        "retry_policy": {"enabled": true, "max_retries": 2, "backoff_seconds": 15}
+      },
+      "prerequisites": ["Email draft from draft_escalation_mail", "Recipients from retrieve_escalation_contacts_v2", "Gmail OAuth credentials"],
+      "alternatives": ["send_email for new email threads (non-escalation)"],
+      "example_usage": {
+        "description": "Send escalation email using pre-drafted content",
+        "request": {
+          "event_data": {"shipper_id": "shipper-123", "agent_id": "TRACY"},
+          "configurations": {
+            "use_llm_generation": false,
+            "email_template": "<html>Escalation email content...</html>",
+            "email_subject": "Escalation: Late Load Follow-up Required",
+            "custom_recipients": ["carrier@example.com", "manager@example.com"],
+            "track_milestone": true
+          }
+        }
+      }
+    },
+    {
+      "action_name": "update_escalation_milestones",
+      "class_name": "UpdateEscalationMilestones",
+      "method_name": "update_esclation_milestones",
+      "domain": "Escalation",
+      "action_path": "ai_agent_actions.actions.api.v1.milestones.update_escalation_milestones",
+      "file_path": "ai_agent_actions/actions/api/v1/milestones/update_escalation_milestones.py",
+      "description": "Update milestone status after sending escalation emails. Updates status from awaiting_response→escalation_l1_sent or escalation_l1_sent→escalation_l2_sent. Also updates load tags to reflect escalation status. Includes last_communication_time and comments about escalation.",
+      "purpose": "Record that escalation email was sent and update tracking accordingly",
+      "when_to_use": "Use after sending escalation emails to update milestone status and load tags. Essential for tracking escalation history and preventing duplicate escalations.",
+      "parameters": {
+        "configurations": {
+          "workflow_id": {"type": "string", "required": true, "description": "Escalation workflow ID"},
+          "shipper_id": {"type": "string", "required": true, "description": "Shipper identifier"},
+          "agent_id": {"type": "string", "required": true, "description": "Agent identifier"},
+          "is_smart_action": {"type": "boolean", "required": false, "default": false, "description": "Enable smart action tracking"}
+        },
+        "data": {
+          "milestones_for_source_id": {"type": "object", "required": true, "description": "Milestones with sent_mail_thread_id and mail_sent_time from send email"}
+        }
+      },
+      "returns": {
+        "audit": {"type": "array", "description": "Audit trail with milestone update results and tag update results"}
+      },
+      "api": {
+        "endpoint": "/api/v1/milestones/update_escalation_milestones",
+        "http_method": "POST",
+        "base_url_env": "ACTION_SERVICE_URL",
+        "authentication": {
+          "type": "Basic",
+          "header": "Authorization",
+          "value_format": "Basic <base64_encoded_credentials>"
+        },
+        "request_format": {
+          "configurations": "Required object with workflow_id, shipper_id, agent_id",
+          "data": "Required object with milestones_for_source_id"
+        },
+        "response_format": {
+          "audit": "array"
+        },
+        "timeout": {"default_seconds": 120},
+        "retry_policy": {"enabled": true, "max_retries": 3, "backoff_seconds": 10}
+      },
+      "prerequisites": ["Sent escalation emails with thread_id and sent_time", "FourKites milestones API access", "FourKites tracking API access (for tag updates)"],
+      "alternatives": ["update_milestones for general milestone updates"],
+      "example_usage": {
+        "description": "Update milestones after sending L1 escalation emails",
+        "request": {
+          "configurations": {
+            "workflow_id": "escalation_wf",
+            "shipper_id": "shipper-123",
+            "agent_id": "TRACY"
+          },
+          "data": {
+            "milestones_for_source_id": {
+              "email_thread_123": [
+                {
+                  "id": "milestone_456",
+                  "status": "awaiting_response",
+                  "sent_mail_thread_id": "thread_789",
+                  "mail_sent_time": 1706745600000,
+                  "entity_id": "LOAD001",
+                  "entity_type": "LOAD"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "workflow_patterns": {
+    "carrier_follow_up": {
+      "description": "Search for late loads and send follow-up emails to carriers",
+      "action_sequence": ["load_search_trigger", "send_email"],
+      "example_use_case": "Daily automated follow-up for delayed shipments"
+    },
+    "shipment_update": {
+      "description": "Process incoming emails, extract shipment updates, and apply to loads",
+      "action_sequence": ["process_emails", "extract_data", "load_update", "load_stop_update", "update_milestones"],
+      "example_use_case": "Automated processing of carrier email updates"
+    },
+    "escalation": {
+      "description": "Multi-level escalation workflow for loads without response",
+      "action_sequence": [
+        "get_escalation_milestones",
+        "draft_escalation_mail",
+        "load_get_details",
+        "retrieve_escalation_contacts_v2",
+        "send_escalation_mail_loop",
+        "update_escalation_milestones"
+      ],
+      "example_use_case": "Automated L1→L2→L3 escalation for late loads without response"
+    }
+  },
+  "common_configuration": {
+    "environment_variables": {
+      "ACTION_SERVICE_URL": "Base URL for AI Agent Actions API (default: http://localhost:8081)",
+      "AUTH_TOKEN": "Basic auth token for API calls",
+      "ANTHROPIC_API_KEY": "Required for LLM-powered actions",
+      "OPENAI_API_KEY": "Alternative to Anthropic for LLM actions"
+    },
+    "authentication": {
+      "type": "Basic Auth",
+      "format": "Authorization: Basic <base64_encoded_credentials>",
+      "credentials": "digital-workforce@fourkites.com:F0urK it3sR0cks!@#"
+    }
+  },
+  "notes": {
+    "code_generation_guidelines": [
+      "All actions use HTTP API calls (not Python imports)",
+      "Use async/await for all HTTP requests",
+      "Handle errors with proper try/except blocks",
+      "Always check response status codes",
+      "Extract data from state dictionary (state.get('data', {}))",
+      "Pass state between nodes (TypedDict pattern)",
+      "Use environment variables for base URLs and auth",
+      "Include audit logs in all responses"
+    ],
+    "langgraph_integration": [
+      "Define state as TypedDict with all required fields",
+      "Each node is an async function that takes state and returns state",
+      "Use conditional edges for branching logic",
+      "Implement loop nodes for iterating over collections (e.g., send_escalation_mail_loop)",
+      "Always handle errors gracefully and update state with error info"
+    ],
+    "best_practices": [
+      "Always use load_search_trigger before send_email to get scac_load_dict",
+      "Enable smart_action tracking for visibility",
+      "Use exact_match=true in load_get_details when you have specific load numbers",
+      "Set enable_webhook_calls=false for testing process_emails safely",
+      "Include parent_request_id for tracking across API calls",
+      "Use include_scac_grouped=true when sending carrier emails"
+    ]
+  }
+}
