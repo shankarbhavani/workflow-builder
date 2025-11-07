@@ -17,7 +17,8 @@
     "zustand": "^4.4.7",
     "react-hot-toast": "^2.4.1",
     "date-fns": "^3.0.6",
-    "clsx": "^2.1.0"
+    "clsx": "^2.1.0",
+    "lucide-react": "^0.294.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",

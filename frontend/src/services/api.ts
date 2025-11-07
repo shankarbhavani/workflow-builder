@@ -122,6 +122,42 @@ class ApiClient {
   async cancelExecution(id: string): Promise<void> {
     await this.client.post(`/executions/${id}/cancel`);
   }
+
+  // Chat endpoints
+  async sendChatMessage(data: {
+    message: string;
+    session_id?: string;
+  }): Promise<{
+    session_id: string;
+    response: string;
+    workflow_draft?: any;
+    messages: Array<{ role: string; content: string; timestamp?: string }>;
+  }> {
+    const response = await this.client.post('/chat', data);
+    return response.data;
+  }
+
+  async getConversationSessions(): Promise<any[]> {
+    const response = await this.client.get<{ sessions: any[] }>('/chat/sessions');
+    return response.data.sessions;
+  }
+
+  async getConversationSession(id: string): Promise<any> {
+    const response = await this.client.get(`/chat/sessions/${id}`);
+    return response.data;
+  }
+
+  async deleteConversationSession(id: string): Promise<void> {
+    await this.client.delete(`/chat/sessions/${id}`);
+  }
 }
 
 export const api = new ApiClient();
+
+// Convenience exports for specific API sections
+export const chatAPI = {
+  sendMessage: (data: { message: string; session_id?: string }) => api.sendChatMessage(data),
+  getSessions: () => api.getConversationSessions(),
+  getSession: (id: string) => api.getConversationSession(id),
+  deleteSession: (id: string) => api.deleteConversationSession(id),
+};

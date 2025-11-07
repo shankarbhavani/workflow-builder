@@ -15,10 +15,12 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { MessageSquare } from 'lucide-react';
 
 import ActionNode from '@/components/ActionNode';
 import ActionLibrary from '@/components/ActionLibrary';
 import ConfigPanel from '@/components/ConfigPanel';
+import ChatPanel from '@/components/ChatPanel';
 import { api } from '@/services/api';
 import { Action } from '@/types/workflow.types';
 
@@ -34,6 +36,7 @@ export default function WorkflowCanvas() {
   const [workflowDescription, setWorkflowDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [showChatPanel, setShowChatPanel] = useState(false);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -86,6 +89,17 @@ export default function WorkflowCanvas() {
   const handleCloseConfig = useCallback(() => {
     setSelectedNode(null);
   }, []);
+
+  const handleWorkflowUpdate = useCallback(
+    (workflowDraft: any) => {
+      if (workflowDraft && workflowDraft.nodes && workflowDraft.edges) {
+        setNodes(workflowDraft.nodes);
+        setEdges(workflowDraft.edges);
+        toast.success('Workflow updated from chat');
+      }
+    },
+    [setNodes, setEdges]
+  );
 
   const handleSave = async () => {
     if (!workflowName.trim()) {
@@ -147,6 +161,17 @@ export default function WorkflowCanvas() {
 
           <div className="flex gap-2 ml-4">
             <button
+              onClick={() => setShowChatPanel(!showChatPanel)}
+              className={`px-4 py-2 border rounded-md flex items-center gap-2 ${
+                showChatPanel
+                  ? 'bg-primary text-white border-primary'
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              Chat Assistant
+            </button>
+            <button
               onClick={handleClear}
               className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
             >
@@ -201,6 +226,16 @@ export default function WorkflowCanvas() {
             onConfigChange={handleConfigChange}
             onClose={handleCloseConfig}
           />
+        )}
+
+        {/* Chat Panel */}
+        {showChatPanel && (
+          <div className="w-96">
+            <ChatPanel
+              onWorkflowUpdate={handleWorkflowUpdate}
+              onClose={() => setShowChatPanel(false)}
+            />
+          </div>
         )}
       </div>
     </div>
