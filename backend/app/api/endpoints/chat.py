@@ -62,7 +62,7 @@ async def chat(
 
     action_catalog = [
         {
-            "name": action.name,
+            "name": action.action_name,
             "description": action.description,
             "parameters": action.parameters
         }

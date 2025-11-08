@@ -84,3 +84,15 @@ class WorkflowExecuteResponse(BaseModel):
     temporal_workflow_id: str
     status: str
     message: str = "Workflow execution started"
+
+
+class WorkflowSuggestMetadataRequest(BaseModel):
+    """Schema for AI metadata suggestion request"""
+    nodes: List[WorkflowNode]
+    edges: List[WorkflowEdge]
+
+
+class WorkflowSuggestMetadataResponse(BaseModel):
+    """Schema for AI metadata suggestion response"""
+    title: str
+    description: str

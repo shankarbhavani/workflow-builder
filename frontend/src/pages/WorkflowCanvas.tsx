@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import ReactFlow, {
   Node,
   Edge,
@@ -15,14 +15,16 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { MessageSquare } from 'lucide-react';
+import { Undo, Redo, History, Sparkles } from 'lucide-react';
 
 import ActionNode from '@/components/ActionNode';
 import ActionLibrary from '@/components/ActionLibrary';
 import ConfigPanel from '@/components/ConfigPanel';
-import ChatPanel from '@/components/ChatPanel';
+import ChatFAB from '@/components/ChatFAB';
+import NodeQuickEdit from '@/components/NodeQuickEdit';
 import { api } from '@/services/api';
 import { Action } from '@/types/workflow.types';
+import { useWorkflowHistory, WorkflowCommands } from '@/hooks/useWorkflowHistory';
 
 const nodeTypes = {
   action: ActionNode,
@@ -31,22 +33,135 @@ const nodeTypes = {
 export default function WorkflowCanvas() {
   const navigate = useNavigate();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [edges, setEdges, onEdgesChangeInternal] = useEdgesState([]);
   const [workflowName, setWorkflowName] = useState('');
   const [workflowDescription, setWorkflowDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
-  const [showChatPanel, setShowChatPanel] = useState(false);
+  const [quickEditNode, setQuickEditNode] = useState<Node | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [isGeneratingSuggestion, setIsGeneratingSuggestion] = useState(false);
+
+  // Initialize undo/redo system
+  const workflowHistory = useWorkflowHistory(nodes, edges, setNodes, setEdges);
+
+  // Wrap onEdgesChange to track edge deletions for undo/redo
+  const onEdgesChange = useCallback(
+    (changes: any[]) => {
+      // Detect edge removals
+      const removedEdges = changes
+        .filter((change) => change.type === 'remove')
+        .map((change) => edges.find((e) => e.id === change.id))
+        .filter(Boolean);
+
+      // Record deletion commands for removed edges
+      removedEdges.forEach((edge) => {
+        if (edge) {
+          workflowHistory.recordCommand(
+            WorkflowCommands.deleteEdge(edge.id, edge, setEdges)
+          );
+        }
+      });
+
+      // Apply changes
+      onEdgesChangeInternal(changes);
+    },
+    [edges, onEdgesChangeInternal, workflowHistory]
+  );
+
+  // Show toast on undo/redo
+  useEffect(() => {
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const modifier = isMac ? '⌘' : 'Ctrl';
+
+    // Show hint on first load
+    const hasSeenHint = localStorage.getItem('undoRedoHintSeen');
+    if (!hasSeenHint) {
+      setTimeout(() => {
+        toast(`💡 Tip: Use ${modifier}+Z to undo, ${modifier}+Y to redo`, {
+          duration: 5000,
+          icon: '⌨️',
+        });
+        localStorage.setItem('undoRedoHintSeen', 'true');
+      }, 2000);
+    }
+  }, []);
 
   const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
-    [setEdges]
+    (params: Connection) => {
+      const newEdge = {
+        ...params,
+        id: `edge-${Date.now()}`,
+      } as Edge;
+
+      setEdges((eds) => [...eds, newEdge]);
+
+      // Record command
+      workflowHistory.recordCommand(
+        WorkflowCommands.addEdge(newEdge, setEdges)
+      );
+    },
+    [setEdges, workflowHistory]
+  );
+
+  const handleDuplicateNode = useCallback(
+    (nodeId: string) => {
+      const nodeToDuplicate = nodes.find((n) => n.id === nodeId);
+      if (!nodeToDuplicate) return;
+
+      const newNode: Node = {
+        ...nodeToDuplicate,
+        id: `node-${Date.now()}`,
+        position: {
+          x: nodeToDuplicate.position.x + 50,
+          y: nodeToDuplicate.position.y + 50,
+        },
+        selected: false,
+      };
+
+      setNodes((nds) => [...nds, newNode]);
+
+      // Record command
+      workflowHistory.recordCommand(
+        WorkflowCommands.addNode(newNode, setNodes)
+      );
+
+      toast.success('Node duplicated');
+    },
+    [nodes, setNodes, workflowHistory]
+  );
+
+  const handleDeleteNode = useCallback(
+    (nodeId: string) => {
+      const deletedNode = nodes.find((n) => n.id === nodeId);
+      if (!deletedNode) return;
+
+      const deletedEdges = edges.filter(
+        (e) => e.source === nodeId || e.target === nodeId
+      );
+
+      // Record command before deletion
+      workflowHistory.recordCommand(
+        WorkflowCommands.deleteNode(nodeId, deletedNode, setNodes, setEdges, deletedEdges)
+      );
+
+      setNodes((nds) => nds.filter((n) => n.id !== nodeId));
+      setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+
+      if (selectedNode?.id === nodeId) {
+        setSelectedNode(null);
+      }
+
+      toast.success('Node deleted');
+    },
+    [nodes, edges, setNodes, setEdges, selectedNode, workflowHistory]
   );
 
   const onActionSelect = useCallback(
     (action: Action) => {
+      const nodeId = `node-${Date.now()}`;
       const newNode: Node = {
-        id: `node-${Date.now()}`,
+        id: nodeId,
         type: 'action',
         position: {
           x: Math.random() * 400,
@@ -60,31 +175,89 @@ export default function WorkflowCanvas() {
             event_data: {},
             configurations: {},
           },
+          onConfigure: () => {
+            const node = nodes.find((n) => n.id === nodeId);
+            if (node) setSelectedNode(node);
+          },
+          onDuplicate: () => handleDuplicateNode(nodeId),
+          onDelete: () => handleDeleteNode(nodeId),
         },
       };
+
       setNodes((nds) => [...nds, newNode]);
+
+      // Record command
+      workflowHistory.recordCommand(
+        WorkflowCommands.addNode(newNode, setNodes)
+      );
+
       toast.success(`Added ${action.display_name}`);
     },
-    [setNodes]
+    [setNodes, nodes, handleDuplicateNode, handleDeleteNode, workflowHistory]
   );
 
   const onNodeClick: NodeMouseHandler = useCallback((event, node) => {
     setSelectedNode(node);
   }, []);
 
+  const onNodeDoubleClick: NodeMouseHandler = useCallback((event, node) => {
+    setQuickEditNode(node);
+  }, []);
+
   const handleConfigChange = useCallback(
     (nodeId: string, config: Record<string, any>) => {
+      const oldNode = nodes.find((n) => n.id === nodeId);
+      if (!oldNode) return;
+
+      const oldConfig = oldNode.data.config;
+
       setNodes((nds) =>
-        nds.map((node) =>
-          node.id === nodeId
-            ? { ...node, data: { ...node.data, config } }
-            : node
+        nds.map((node) => {
+          if (node.id === nodeId) {
+            // Preserve all existing data including action object
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                config,
+                // Explicitly preserve action field
+                action: node.data.action,
+              },
+            };
+          }
+          return node;
+        })
+      );
+
+      // Record command
+      workflowHistory.recordCommand(
+        WorkflowCommands.updateNode(
+          nodeId,
+          { config: oldConfig },
+          { config },
+          setNodes
         )
       );
+
       toast.success('Configuration updated');
     },
-    [setNodes]
+    [nodes, setNodes, workflowHistory]
   );
+
+  const handleQuickEditSave = useCallback(
+    (nodeId: string, config: Record<string, any>) => {
+      handleConfigChange(nodeId, config);
+      setQuickEditNode(null);
+    },
+    [handleConfigChange]
+  );
+
+  const handleOpenFullConfig = useCallback(() => {
+    if (quickEditNode) {
+      setSelectedNode(quickEditNode);
+      setQuickEditNode(null);
+    }
+  }, [quickEditNode]);
 
   const handleCloseConfig = useCallback(() => {
     setSelectedNode(null);
@@ -93,12 +266,28 @@ export default function WorkflowCanvas() {
   const handleWorkflowUpdate = useCallback(
     (workflowDraft: any) => {
       if (workflowDraft && workflowDraft.nodes && workflowDraft.edges) {
-        setNodes(workflowDraft.nodes);
+        // Preserve action objects from existing nodes when updating from chat
+        const updatedNodes = workflowDraft.nodes.map((newNode: Node) => {
+          const existingNode = nodes.find((n) => n.id === newNode.id);
+          if (existingNode && existingNode.data.action) {
+            // Preserve the action object from existing node
+            return {
+              ...newNode,
+              data: {
+                ...newNode.data,
+                action: existingNode.data.action,
+              },
+            };
+          }
+          return newNode;
+        });
+
+        setNodes(updatedNodes);
         setEdges(workflowDraft.edges);
         toast.success('Workflow updated from chat');
       }
     },
-    [setNodes, setEdges]
+    [nodes, setNodes, setEdges]
   );
 
   const handleSave = async () => {
@@ -132,10 +321,76 @@ export default function WorkflowCanvas() {
   };
 
   const handleClear = () => {
+    if (nodes.length === 0 && edges.length === 0) {
+      toast('Canvas is already empty', { icon: 'ℹ️' });
+      return;
+    }
+
+    const oldNodes = [...nodes];
+    const oldEdges = [...edges];
+
     setNodes([]);
     setEdges([]);
+
+    // Record command for undo
+    workflowHistory.recordCommand(
+      WorkflowCommands.clearAll(oldNodes, oldEdges, setNodes, setEdges)
+    );
+
     toast.success('Canvas cleared');
   };
+
+  const handleSuggestMetadata = async () => {
+    if (nodes.length === 0) {
+      toast.error('Add some actions to the canvas first');
+      return;
+    }
+
+    setIsGeneratingSuggestion(true);
+    try {
+      // Call AI suggestion API
+      const suggestion = await api.suggestWorkflowMetadata({
+        nodes: nodes.map((node) => ({
+          id: node.id,
+          type: node.type || 'action',
+          data: node.data,
+          position: node.position,
+        })),
+        edges: edges.map((edge) => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          type: edge.type || 'default',
+        })),
+      });
+
+      // Update name and description
+      setWorkflowName(suggestion.title);
+      setWorkflowDescription(suggestion.description);
+
+      toast.success('✨ Suggestions applied!');
+    } catch (error: any) {
+      console.error('Failed to generate suggestions:', error);
+      toast.error('Failed to generate suggestions. Please try again.');
+    } finally {
+      setIsGeneratingSuggestion(false);
+    }
+  };
+
+  // Enrich nodes with quick action callbacks
+  const enrichedNodes = useMemo(
+    () =>
+      nodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          onConfigure: () => setSelectedNode(node),
+          onDuplicate: () => handleDuplicateNode(node.id),
+          onDelete: () => handleDeleteNode(node.id),
+        },
+      })),
+    [nodes, handleDuplicateNode, handleDeleteNode]
+  );
 
   return (
     <div className="h-screen flex flex-col">
@@ -143,13 +398,33 @@ export default function WorkflowCanvas() {
       <div className="bg-white border-b px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex-1 max-w-2xl">
-            <input
-              type="text"
-              placeholder="Workflow name..."
-              value={workflowName}
-              onChange={(e) => setWorkflowName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary focus:border-primary text-lg font-semibold"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Workflow name..."
+                value={workflowName}
+                onChange={(e) => setWorkflowName(e.target.value)}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary focus:border-primary text-lg font-semibold"
+              />
+              <button
+                onClick={handleSuggestMetadata}
+                disabled={isGeneratingSuggestion || nodes.length === 0}
+                className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm font-medium"
+                title="AI-powered title & description suggestion"
+              >
+                {isGeneratingSuggestion ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Generating...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    <span>Suggest</span>
+                  </>
+                )}
+              </button>
+            </div>
             <input
               type="text"
               placeholder="Description (optional)..."
@@ -160,17 +435,33 @@ export default function WorkflowCanvas() {
           </div>
 
           <div className="flex gap-2 ml-4">
-            <button
-              onClick={() => setShowChatPanel(!showChatPanel)}
-              className={`px-4 py-2 border rounded-md flex items-center gap-2 ${
-                showChatPanel
-                  ? 'bg-primary text-white border-primary'
-                  : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <MessageSquare className="w-4 h-4" />
-              Chat Assistant
-            </button>
+            {/* Undo/Redo Controls */}
+            <div className="flex gap-1 mr-2 border-r border-gray-300 pr-2">
+              <button
+                onClick={workflowHistory.undo}
+                disabled={!workflowHistory.canUndo}
+                className="p-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                title={`Undo${workflowHistory.canUndo && workflowHistory.history.length > 0 ? ` (${workflowHistory.history[workflowHistory.history.length - 1]?.description})` : ''}`}
+              >
+                <Undo className="w-5 h-5" />
+              </button>
+              <button
+                onClick={workflowHistory.redo}
+                disabled={!workflowHistory.canRedo}
+                className="p-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                title="Redo"
+              >
+                <Redo className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => setShowHistory(!showHistory)}
+                className={`p-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-all ${showHistory ? 'bg-gray-100' : ''}`}
+                title="Show History"
+              >
+                <History className="w-5 h-5" />
+              </button>
+            </div>
+
             <button
               onClick={handleClear}
               className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
@@ -194,6 +485,31 @@ export default function WorkflowCanvas() {
         </div>
       </div>
 
+      {/* History Panel */}
+      {showHistory && workflowHistory.history.length > 0 && (
+        <div className="bg-gray-50 border-b px-6 py-3">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-sm font-semibold text-gray-700">Recent Actions</h4>
+            <button
+              onClick={() => setShowHistory(false)}
+              className="text-xs text-gray-500 hover:text-gray-700"
+            >
+              Hide
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {workflowHistory.history.slice().reverse().map((entry, index) => (
+              <div
+                key={index}
+                className="text-xs px-2 py-1 bg-white border border-gray-200 rounded text-gray-600"
+              >
+                {entry.description}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Main Content */}
       <div className="flex-1 flex">
         {/* Action Library Sidebar */}
@@ -204,12 +520,13 @@ export default function WorkflowCanvas() {
         {/* Canvas */}
         <div className="flex-1">
           <ReactFlow
-            nodes={nodes}
+            nodes={enrichedNodes}
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
+            onNodeDoubleClick={onNodeDoubleClick}
             nodeTypes={nodeTypes}
             fitView
           >
@@ -227,17 +544,24 @@ export default function WorkflowCanvas() {
             onClose={handleCloseConfig}
           />
         )}
-
-        {/* Chat Panel */}
-        {showChatPanel && (
-          <div className="w-96">
-            <ChatPanel
-              onWorkflowUpdate={handleWorkflowUpdate}
-              onClose={() => setShowChatPanel(false)}
-            />
-          </div>
-        )}
       </div>
+
+      {/* Floating Chat Assistant */}
+      <ChatFAB
+        onWorkflowUpdate={handleWorkflowUpdate}
+        selectedNode={selectedNode}
+        allNodes={nodes}
+      />
+
+      {/* Quick Edit Overlay */}
+      {quickEditNode && (
+        <NodeQuickEdit
+          node={quickEditNode}
+          onSave={handleQuickEditSave}
+          onClose={() => setQuickEditNode(null)}
+          onOpenFullConfig={handleOpenFullConfig}
+        />
+      )}
     </div>
   );
 }

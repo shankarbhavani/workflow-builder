@@ -150,6 +150,15 @@ class ApiClient {
   async deleteConversationSession(id: string): Promise<void> {
     await this.client.delete(`/chat/sessions/${id}`);
   }
+
+  // Workflow metadata suggestion
+  async suggestWorkflowMetadata(data: {
+    nodes: any[];
+    edges: any[];
+  }): Promise<{ title: string; description: string }> {
+    const response = await this.client.post('/workflows/suggest-metadata', data);
+    return response.data;
+  }
 }
 
 export const api = new ApiClient();

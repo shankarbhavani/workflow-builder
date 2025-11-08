@@ -42,13 +42,28 @@ async def seed_actions(session: AsyncSession):
         existing_action = result.scalar_one_or_none()
 
         if existing_action:
-            print(f"  ⟳ Action '{action_data['action_name']}' already exists, skipping")
+            # Update existing action with latest data from catalogue
+            existing_action.display_name = _generate_display_name(action_data["action_name"])
+            existing_action.class_name = action_data["class_name"]
+            existing_action.method_name = action_data["method_name"]
+            existing_action.domain = action_data["domain"]
+            existing_action.endpoint = action_data["api"]["endpoint"]
+            existing_action.http_method = action_data["api"]["http_method"]
+            existing_action.description = action_data.get("description")
+            existing_action.parameters = action_data.get("parameters", {})
+            existing_action.returns = action_data.get("returns", {})
+            existing_action.category = action_data["domain"]
+            existing_action.tags = _extract_tags(action_data)
+            existing_action.is_active = True
+
             updated_count += 1
+            print(f"  ⟳ Updated action: {action_data['action_name']}")
             continue
 
         # Create new action
         action = Action(
             action_name=action_data["action_name"],
+            display_name=_generate_display_name(action_data["action_name"]),
             class_name=action_data["class_name"],
             method_name=action_data["method_name"],
             domain=action_data["domain"],
@@ -68,7 +83,15 @@ async def seed_actions(session: AsyncSession):
 
     await session.commit()
     print(f"\n✓ Seeded {seeded_count} new actions")
-    print(f"✓ Skipped {updated_count} existing actions")
+    print(f"✓ Updated {updated_count} existing actions")
+
+
+def _generate_display_name(action_name: str) -> str:
+    """Generate display name from action_name (snake_case to Title Case)"""
+    # Convert snake_case to Title Case
+    # load_search_trigger -> Load Search Trigger
+    words = action_name.replace('_', ' ').split()
+    return ' '.join(word.capitalize() for word in words)
 
 
 def _extract_tags(action_data: dict) -> list:

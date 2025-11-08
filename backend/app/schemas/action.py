@@ -10,6 +10,7 @@ from uuid import UUID
 class ActionBase(BaseModel):
     """Base action schema"""
     action_name: str
+    display_name: Optional[str] = None
     class_name: str
     method_name: str
     domain: str

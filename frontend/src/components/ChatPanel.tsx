@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, X, MessageSquare } from 'lucide-react';
+import { Send, X, MessageSquare, Target } from 'lucide-react';
+import { Node } from 'reactflow';
 import { chatAPI } from '../services/api';
 
 interface Message {
@@ -11,14 +12,44 @@ interface Message {
 interface ChatPanelProps {
   onWorkflowUpdate?: (workflowDraft: any) => void;
   onClose?: () => void;
+  showHeader?: boolean;
+  selectedNode?: Node | null;
+  allNodes?: Node[];
 }
 
-export default function ChatPanel({ onWorkflowUpdate, onClose }: ChatPanelProps) {
+export default function ChatPanel({
+  onWorkflowUpdate,
+  onClose,
+  showHeader = true,
+  selectedNode,
+  allNodes
+}: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Generate context-aware suggestions based on selected node
+  const getContextSuggestions = (): string[] => {
+    if (!selectedNode) {
+      return [
+        "Create a workflow to follow up with carriers about late shipments",
+        "Build a workflow that processes incoming emails and extracts data",
+        "Set up an escalation workflow for loads without responses"
+      ];
+    }
+
+    const nodeName = selectedNode.data.label || selectedNode.data.action_name;
+    return [
+      `What does the ${nodeName} action do?`,
+      `Configure this ${nodeName} action for me`,
+      `What should I connect after ${nodeName}?`,
+      `Show me example parameters for ${nodeName}`
+    ];
+  };
+
+  const contextSuggestions = getContextSuggestions();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -28,12 +59,23 @@ export default function ChatPanel({ onWorkflowUpdate, onClose }: ChatPanelProps)
     scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = async () => {
-    if (!input.trim() || isLoading) return;
+  const handleSendMessage = async (messageText?: string) => {
+    const textToSend = messageText || input.trim();
+    if (!textToSend || isLoading) return;
+
+    // Build context-enriched message
+    let enrichedMessage = textToSend;
+    if (selectedNode) {
+      const nodeInfo = `\n\n[Context: Currently viewing "${selectedNode.data.label}" (${selectedNode.data.action_name}) node]`;
+      enrichedMessage = textToSend + nodeInfo;
+    }
+    if (allNodes && allNodes.length > 0) {
+      enrichedMessage += `\n[Current workflow has ${allNodes.length} nodes]`;
+    }
 
     const userMessage: Message = {
       role: 'user',
-      content: input.trim(),
+      content: textToSend, // Show clean message to user
     };
 
     // Add user message immediately
@@ -43,7 +85,7 @@ export default function ChatPanel({ onWorkflowUpdate, onClose }: ChatPanelProps)
 
     try {
       const response = await chatAPI.sendMessage({
-        message: input.trim(),
+        message: enrichedMessage, // Send enriched message to backend
         session_id: sessionId || undefined,
       });
 
@@ -85,39 +127,61 @@ export default function ChatPanel({ onWorkflowUpdate, onClose }: ChatPanelProps)
 
   return (
     <div className="flex flex-col h-full bg-white border-l border-gray-200">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200">
-        <div className="flex items-center gap-2">
-          <MessageSquare className="w-5 h-5 text-primary" />
-          <h3 className="font-semibold text-gray-900">Workflow Assistant</h3>
+      {/* Header - Optional */}
+      {showHeader && (
+        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="w-5 h-5 text-primary" />
+            <h3 className="font-semibold text-gray-900">Workflow Assistant</h3>
+          </div>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1 hover:bg-gray-100 rounded transition-colors"
+              aria-label="Close chat"
+            >
+              <X className="w-5 h-5 text-gray-600" />
+            </button>
+          )}
         </div>
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-gray-100 rounded transition-colors"
-            aria-label="Close chat"
-          >
-            <X className="w-5 h-5 text-gray-600" />
-          </button>
-        )}
-      </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Context Indicator */}
+        {selectedNode && (
+          <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+            <Target className="w-4 h-4 text-blue-600 flex-shrink-0" />
+            <div>
+              <span className="font-medium text-blue-900">Context:</span>
+              <span className="text-blue-700 ml-1">{selectedNode.data.label}</span>
+            </div>
+          </div>
+        )}
+
         {messages.length === 0 && (
           <div className="text-center text-gray-500 mt-8">
             <MessageSquare className="w-12 h-12 mx-auto mb-3 text-gray-300" />
             <p className="text-sm">
-              Hi! I'm your workflow assistant. Describe the workflow you'd like to create, and I'll
-              help you build it.
+              Hi! I'm your workflow assistant. {selectedNode ? 'Ask me about this action or' : 'Describe the workflow you\'d like to create, and I\'ll help you build it.'}
             </p>
-            <div className="mt-4 text-xs text-left space-y-2 max-w-sm mx-auto">
-              <p className="font-semibold text-gray-700">Try asking:</p>
-              <ul className="list-disc list-inside space-y-1 text-gray-600">
-                <li>"Create a workflow to follow up with carriers about late shipments"</li>
-                <li>"Build a workflow that processes incoming emails and extracts data"</li>
-                <li>"Set up an escalation workflow for loads without responses"</li>
-              </ul>
+
+            {/* Quick Suggestions */}
+            <div className="mt-4 space-y-2 max-w-sm mx-auto">
+              <p className="text-xs font-semibold text-gray-700">
+                {selectedNode ? '💡 Quick actions:' : '💡 Try asking:'}
+              </p>
+              <div className="flex flex-wrap gap-2 justify-center">
+                {contextSuggestions.map((suggestion, index) => (
+                  <button
+                    key={index}
+                    onClick={() => handleSendMessage(suggestion)}
+                    className="text-xs px-3 py-1.5 bg-white border border-gray-300 rounded-full hover:bg-gray-50 hover:border-primary transition-colors text-gray-700"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Node } from 'reactflow';
+import { FileText } from 'lucide-react';
 import { Action } from '@/types/workflow.types';
+import { getTemplatesForAction, ParameterTemplate } from '@/data/parameterTemplates';
 
 interface ConfigPanelProps {
   selectedNode: Node | null;
@@ -11,6 +13,7 @@ interface ConfigPanelProps {
 export default function ConfigPanel({ selectedNode, onConfigChange, onClose }: ConfigPanelProps) {
   const [config, setConfig] = useState<Record<string, any>>({});
   const [activeTab, setActiveTab] = useState<'event_data' | 'configurations'>('event_data');
+  const [availableTemplates, setAvailableTemplates] = useState<ParameterTemplate[]>([]);
 
   // Initialize config from node data
   useEffect(() => {
@@ -27,7 +30,20 @@ export default function ConfigPanel({ selectedNode, onConfigChange, onClose }: C
         configurations: {},
       });
     }
+
+    // Load available templates for this action
+    if (selectedNode?.data.action_name) {
+      const templates = getTemplatesForAction(selectedNode.data.action_name);
+      setAvailableTemplates(templates);
+    }
   }, [selectedNode]);
+
+  const handleApplyTemplate = (template: ParameterTemplate) => {
+    setConfig({
+      event_data: { ...config.event_data, ...template.config.event_data },
+      configurations: { ...config.configurations, ...template.config.configurations },
+    });
+  };
 
   if (!selectedNode) {
     return null;
@@ -196,6 +212,38 @@ export default function ConfigPanel({ selectedNode, onConfigChange, onClose }: C
       <div className="p-4 border-b bg-blue-50">
         <div className="text-xs text-gray-700">{action.description}</div>
       </div>
+
+      {/* Template Selector */}
+      {availableTemplates.length > 0 && (
+        <div className="p-4 border-b bg-purple-50">
+          <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+            <FileText className="w-4 h-4 text-purple-600" />
+            Load Template
+          </label>
+          <select
+            onChange={(e) => {
+              const template = availableTemplates.find((t) => t.name === e.target.value);
+              if (template) handleApplyTemplate(template);
+            }}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+            defaultValue=""
+          >
+            <option value="" disabled>
+              Select a template...
+            </option>
+            {availableTemplates.map((template) => (
+              <option key={template.name} value={template.name}>
+                {template.name}
+              </option>
+            ))}
+          </select>
+          {availableTemplates.find((t) => t.name)?.description && (
+            <p className="text-xs text-gray-600 mt-1">
+              💡 {availableTemplates[0].description}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex border-b">

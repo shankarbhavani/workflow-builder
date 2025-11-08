@@ -15,6 +15,7 @@ class Action(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     action_name = Column(String(255), unique=True, nullable=False, index=True)
+    display_name = Column(String(255), nullable=True)  # Human-readable name
     class_name = Column(String(255), nullable=False)
     method_name = Column(String(255), nullable=False)
     domain = Column(String(255), nullable=False, index=True)
