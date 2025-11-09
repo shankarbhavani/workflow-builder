@@ -1,0 +1,1954 @@
+{
+   "generated_at":"2025-11-09T00:00:00.000000",
+   "version":"2.0",
+   "description":"Curated action catalog for SAM workflow automation - focused on Invoice processing, Waybill handling and packing slip handling",
+   "actions":[
+      {
+         "action_name":"Shipment - Extract Data - PDF",
+         "class_name":"ShipmentExtractDataPdf",
+         "method_name":"execute",
+         "domain":"Document Processing",
+         "action_path":"ai_agent_actions.actions.api.v1.fourkites_llm.shipment_extract_data_pdf",
+         "file_path":"ai_agent_actions/actions/api/v1/fourkites_llm/shipment_extract_data_pdf.py",
+         "description":"Reads PDF documents and extracts shipment data in a predefined JSON format. Supports async processing for large documents. Designed to extract key shipment information like mode, BOL number, booking number, container numbers, carrier details, and reference numbers from waybill PDFs.",
+         "purpose":"Extract structured shipment data from PDF waybills/shipping documents for ocean, air, and ground shipments",
+         "when_to_use":"Use when you receive waybill, bill of lading, or shipping document PDFs via email or file upload and need to extract shipment details (BOL, booking numbers, containers, carrier, ports) to create or update shipments in the FourKites platform.",
+         "parameters":{
+            "event_data":{
+               "type":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Type of event (e.g., 'Email')"
+               },
+               "id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Event identifier"
+               },
+               "sender":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Email address of the sender"
+               },
+               "tracking_id":{
+                  "type":"string",
+                  "required":false,
+                  "description":"Tracking ID of the load associated with the event"
+               },
+               "message":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Original message content"
+               },
+               "latest_message":{
+                  "type":"string",
+                  "required":false,
+                  "description":"Most recent message content"
+               },
+               "latest_message_with_subject":{
+                  "type":"string",
+                  "required":false,
+                  "description":"Message content including the subject"
+               },
+               "subject":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Email subject"
+               },
+               "timestamp":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Event timestamp in epoch milliseconds"
+               },
+               "agent_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Agent identifier (e.g., SAM, TRACY)"
+               },
+               "file_name":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Name of the PDF file being processed"
+               },
+               "attachment_path":{
+                  "type":"string",
+                  "required":false,
+                  "description":"Path to any attached files"
+               },
+               "shipper_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Shipper identifier"
+               },
+               "parent_request_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Unique identifier for the workflow instance (12 digit UUID)"
+               },
+               "workflow_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Workflow identifier"
+               },
+               "workflow_name":{
+                  "type":"string",
+                  "required":false,
+                  "description":"Name of the workflow (e.g., 'waybill')"
+               },
+               "is_response_workflow":{
+                  "type":"boolean",
+                  "required":false,
+                  "description":"Whether this is a response workflow"
+               },
+               "customer_workflow_identifier":{
+                  "type":"string",
+                  "required":false,
+                  "description":"Customer-facing workflow identifier (e.g., 'process_waybill')"
+               }
+            },
+            "configurations":{
+               "async":{
+                  "type":"boolean",
+                  "required":false,
+                  "default":false,
+                  "description":"Whether to process asynchronously. Set to true for large documents"
+               },
+               "resume_url":{
+                  "type":"string",
+                  "required":false,
+                  "description":"Resume URL for async processing (Pipedream webhook URL)"
+               },
+               "cancel_url":{
+                  "type":"string",
+                  "required":false,
+                  "description":"Cancel URL for async processing (Pipedream webhook URL)"
+               }
+            },
+            "data":{
+               "signed_url":{
+                  "type":"string",
+                  "required":true,
+                  "description":"S3 pre-signed URL of the waybill PDF from which data needs to be extracted"
+               }
+            }
+         },
+         "returns":{
+            "extracted_shipment_data":{
+               "type":"array",
+               "description":"List of extracted shipment objects containing mode, bol_number, booking_number, container_numbers, carrier, export_ref_numbers, port_of_loading, port_of_discharge, etc."
+            },
+            "audit":{
+               "type":"array",
+               "description":"Array of audit logs tracking the extraction process"
+            }
+         },
+         "api":{
+            "endpoint":"/api/v1/fourkites_llm/shipment_extract_data_pdf",
+            "http_method":"POST",
+            "base_url_prod":"https://service.ng.fourkites.com/ai-agent-actions",
+            "base_url_dev":"https://service-dev.ng-np.fourkites.com/ai-agent-actions",
+            "authentication":{
+               "type":"Basic",
+               "header":"Authorization",
+               "value_format":"Basic <shipper_admin_basic_auth>"
+            },
+            "request_format":{
+               "configurations":"Optional object for async processing",
+               "data":"Required object with signed_url",
+               "event_data":"Required object with shipper_id, agent_id, workflow details"
+            },
+            "response_format":{
+               "sync":{
+                  "location":"$return_value",
+                  "structure":"data object with extracted_shipment_data array"
+               },
+               "async":{
+                  "initial":"$return_value with 'Task started, processing in the background'",
+                  "final":"$resume_data with actual extracted data"
+               }
+            },
+            "timeout":{
+               "default_seconds":120
+            },
+            "retry_policy":{
+               "enabled":true,
+               "max_retries":3,
+               "backoff_seconds":10
+            }
+         },
+         "prerequisites":[
+            "Valid shipper_id and agent_id",
+            "S3 pre-signed URL for the PDF document",
+            "PDF must be a waybill or bill of lading",
+            "Authentication credentials (shipper_admin_basic_auth)"
+         ],
+         "alternatives":[
+            "FourKites LLM: Extract Data (generic extraction with custom labels)",
+            "FourKites LLM: Order - Extract Data - PDF (for purchase orders/invoices)"
+         ],
+         "example_usage":{
+            "description":"Extract shipment data from ocean waybill PDF",
+            "request":{
+               "configurations":{
+                  "async":false
+               },
+               "data":{
+                  "signed_url":"https://fk-datalake-dev.s3.amazonaws.com/classification/19416234a54f1452-waybill.pdf?signature=..."
+               },
+               "event_data":{
+                  "type":"Email",
+                  "id":"19416234a54f1452",
+                  "sender":"carrier@example.com",
+                  "tracking_id":"",
+                  "message":"Subject: Test - Ocean shipment\\nMessage: ",
+                  "subject":"Test - Ocean shipment",
+                  "timestamp":"1735538184000",
+                  "agent_id":"SAM",
+                  "file_name":"Original Bill of Lading.pdf",
+                  "shipper_id":"test-qa-demo-shipper",
+                  "parent_request_id":"19416234a54f1452",
+                  "workflow_id":"p_aNCALxa",
+                  "workflow_name":"waybill",
+                  "customer_workflow_identifier":"process_waybill"
+               }
+            },
+            "expected_response":{
+               "data":{
+                  "extracted_shipment_data":[
+                     {
+                        "mode":"OCEAN",
+                        "bol_number":"ONEYSELEF4501300",
+                        "booking_number":"SELEF4501300",
+                        "container_numbers":[
+                           "SZLU3635991"
+                        ],
+                        "carrier":"Ocean Network Express",
+                        "export_ref_numbers":[
+                           
+                        ]
+                     }
+                  ]
+               }
+            }
+         },
+         "additional_examples":[
+            {
+               "description":"Async processing for large multi-page waybill",
+               "request":{
+                  "configurations":{
+                     "async":true,
+                     "resume_url":"https://api.pipedream.com/v1/sources/p_6lCoZmb/resume/2r7O8839mStyLxccVyCLH0SyG5Y",
+                     "cancel_url":"https://api.pipedream.com/v1/sources/p_6lCoZmb/cancel/2r7O8839mStyLxccVyCLH0SyG5Y"
+                  },
+                  "data":{
+                     "signed_url":"https://fk-datalake-dev.s3.amazonaws.com/large-waybill.pdf?signature=..."
+                  },
+                  "event_data":{
+                     "type":"Email",
+                     "agent_id":"SAM",
+                     "shipper_id":"test-qa-demo-shipper",
+                     "parent_request_id":"req-12345",
+                     "workflow_id":"waybill-processing"
+                  }
+               }
+            }
+         ]
+      },
+      {
+         "action_name":"Document Classifier",
+         "class_name":"DocumentClassifier",
+         "method_name":"execute",
+         "domain":"Document Processing",
+         "action_path":"ai_agent_actions.actions.api.v1.fourkites_llm.document_classifier",
+         "file_path":"ai_agent_actions/actions/api/v1/fourkites_llm/document_classifier.py",
+         "description":"Classifies multi-page PDF documents into predefined categories (waybill, invoice, packing list) using AI-powered document analysis. Splits a single PDF containing multiple document types into separate classified PDFs stored in S3 with pre-signed URLs. Supports async processing for large documents.",
+         "purpose":"Automatically identify and separate different document types from a single PDF file, enabling downstream workflows to process each document type appropriately",
+         "when_to_use":"Use when you receive a single PDF containing multiple document types (e.g., combined waybill + invoice + packing slip) and need to separate them for specialized processing. Common in supplier/carrier communications where all documents are sent as one attachment.",
+         "parameters":{
+            "event_data":{
+               "type":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Type of event (e.g., 'Email')"
+               },
+               "id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Event identifier"
+               },
+               "sender":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Email address of the sender"
+               },
+               "tracking_id":{
+                  "type":"string",
+                  "required":false,
+                  "description":"Tracking ID of the load associated with the event"
+               },
+               "message":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Original message content"
+               },
+               "latest_message":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Most recent message content"
+               },
+               "latest_message_with_subject":{
+                  "type":"string",
+                  "required":false,
+                  "description":"Message content including the subject"
+               },
+               "subject":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Email subject"
+               },
+               "timestamp":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Event timestamp in epoch milliseconds"
+               },
+               "agent_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Agent identifier (e.g., SAM)"
+               },
+               "file_name":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Name of the PDF file being classified"
+               },
+               "attachment_path":{
+                  "type":"string",
+                  "required":false,
+                  "description":"Path to any attached files"
+               },
+               "shipper_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Shipper identifier"
+               },
+               "parent_request_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Unique identifier for the workflow instance (12 digit UUID)"
+               },
+               "workflow_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Workflow identifier"
+               },
+               "parent_trace_id":{
+                  "type":"string",
+                  "required":false,
+                  "description":"Parent trace ID for distributed tracing"
+               }
+            },
+            "configurations":{
+               "s3_bucket_name":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Name of the S3 bucket where classified PDFs will be stored"
+               },
+               "prefix":{
+                  "type":"string",
+                  "required":true,
+                  "description":"S3 prefix/folder path for organizing classified documents"
+               },
+               "async":{
+                  "type":"boolean",
+                  "required":false,
+                  "default":false,
+                  "description":"Whether to process asynchronously. Set to true for large multi-page documents"
+               },
+               "resume_url":{
+                  "type":"string",
+                  "required":false,
+                  "description":"Resume URL for async processing (required if async=true)"
+               },
+               "cancel_url":{
+                  "type":"string",
+                  "required":false,
+                  "description":"Cancel URL for async processing (required if async=true)"
+               }
+            },
+            "data":{
+               "signed_url":{
+                  "type":"string",
+                  "required":true,
+                  "description":"S3 pre-signed URL of the PDF document to be classified"
+               }
+            }
+         },
+         "returns":{
+            "waybill":{
+               "type":"object",
+               "description":"Object containing signed_url for the extracted waybill pages (if found)"
+            },
+            "invoice":{
+               "type":"object",
+               "description":"Object containing signed_url for the extracted invoice pages (if found)"
+            },
+            "packing_list":{
+               "type":"object",
+               "description":"Object containing signed_url for the extracted packing list pages (if found)"
+            },
+            "audit":{
+               "type":"array",
+               "description":"Array of audit logs tracking the classification process"
+            }
+         },
+         "api":{
+            "endpoint":"/api/v1/fourkites_llm/classifier_documents",
+            "http_method":"POST",
+            "base_url_prod":"https://service.ng.fourkites.com/ai-agent-actions",
+            "base_url_dev":"https://service-dev.ng-np.fourkites.com/ai-agent-actions",
+            "authentication":{
+               "type":"Basic",
+               "header":"Authorization",
+               "value_format":"Basic <shipper_admin_basic_auth>"
+            },
+            "request_format":{
+               "configurations":"Required object with s3_bucket_name, prefix, and optional async settings",
+               "data":"Required object with signed_url",
+               "event_data":"Required object with shipper_id, agent_id, workflow details"
+            },
+            "response_format":{
+               "sync":{
+                  "location":"$return_value",
+                  "structure":"data object with waybill, invoice, packing_list keys, each containing signed_url"
+               },
+               "async":{
+                  "initial":"$return_value with 'Task started, processing in the background'",
+                  "final":"$resume_data with classified document URLs"
+               }
+            },
+            "timeout":{
+               "default_seconds":180
+            },
+            "retry_policy":{
+               "enabled":true,
+               "max_retries":3,
+               "backoff_seconds":10
+            }
+         },
+         "prerequisites":[
+            "Valid shipper_id and agent_id",
+            "S3 pre-signed URL for the PDF document",
+            "S3 bucket configured for storing classified documents",
+            "Authentication credentials (shipper_admin_basic_auth)",
+            "PDF must contain recognizable document types (waybill, invoice, packing list)"
+         ],
+         "alternatives":[
+            "FourKites LLM: Document Classifier Generic (for custom document types)",
+            "Manual document separation"
+         ],
+         "example_usage":{
+            "description":"Classify a combined PDF with waybill, invoice, and packing list",
+            "request":{
+               "configurations":{
+                  "s3_bucket_name":"fk-datalake-dev",
+                  "prefix":"classification",
+                  "async":false
+               },
+               "data":{
+                  "signed_url":"https://fk-datalake-dev.s3.us-east-1.amazonaws.com/sam-dev/19445eb87631d8c1-combined-doc.pdf?signature=..."
+               },
+               "event_data":{
+                  "type":"Email",
+                  "id":"19445eb87631d8c1",
+                  "sender":"supplier@example.com",
+                  "tracking_id":"",
+                  "message":"Subject: Shipping documents\\nMessage: Please find attached",
+                  "subject":"Shipping documents",
+                  "timestamp":"1736339838000",
+                  "agent_id":"SAM",
+                  "file_name":"combined-shipping-docs.pdf",
+                  "shipper_id":"test-qa-demo-shipper",
+                  "parent_request_id":"19445eb87631d8c1",
+                  "workflow_id":"sam-workflow",
+                  "parent_trace_id":"2rLYcTlJ094mwr3CssGyDj2MWYO"
+               }
+            },
+            "expected_response":{
+               "data":{
+                  "waybill":{
+                     "signed_url":"https://fk-datalake-dev.s3.amazonaws.com/classification/19445eb87631d8c1-waybill_20250108190349.pdf?signature=..."
+                  },
+                  "invoice":{
+                     "signed_url":"https://fk-datalake-dev.s3.amazonaws.com/classification/19445eb87631d8c1-invoice_20250108190353.pdf?signature=..."
+                  },
+                  "packing list":{
+                     "signed_url":"https://fk-datalake-dev.s3.amazonaws.com/classification/19445eb87631d8c1-packing_list_20250108190358.pdf?signature=..."
+                  }
+               }
+            }
+         },
+         "additional_examples":[
+            {
+               "description":"Async classification for large 50+ page combined document",
+               "request":{
+                  "configurations":{
+                     "s3_bucket_name":"fk-datalake-dev",
+                     "prefix":"classification",
+                     "async":true,
+                     "resume_url":"https://api.pipedream.com/v1/sources/p_aNCALxa/resume/2r7O8839mStyLxccVyCLH0SyG5Y",
+                     "cancel_url":"https://api.pipedream.com/v1/sources/p_aNCALxa/cancel/2r7O8839mStyLxccVyCLH0SyG5Y"
+                  },
+                  "data":{
+                     "signed_url":"https://fk-datalake-dev.s3.us-east-1.amazonaws.com/large-combined-doc.pdf?signature=..."
+                  },
+                  "event_data":{
+                     "agent_id":"SAM",
+                     "shipper_id":"test-qa-demo-shipper",
+                     "parent_request_id":"19445eb87631d8c1",
+                     "workflow_id":"sam-workflow"
+                  }
+               }
+            }
+         ]
+      },
+      {
+         "action_name":"Check Completeness",
+         "class_name":"CheckCompleteness",
+         "method_name":"execute",
+         "domain":"Document Processing",
+         "action_path":"ai_agent_actions.actions.api.v1.fourkites_llm.check_completeness",
+         "file_path":"ai_agent_actions/actions/api/v1/fourkites_llm/check_completeness.py",
+         "description":"Verifies the completeness of extracted document data by evaluating the presence and validity of required fields. Calculates completeness scores (0.0 to 1.0) for mandatory and optional keys, supporting both default field sets per document type and custom field validation. Handles nested structures and arrays intelligently.",
+         "purpose":"Validate data quality after extraction to determine if sufficient information was captured from documents before proceeding with shipment/order creation or sending follow-up requests",
+         "when_to_use":"Use after any data extraction action (from PDF, Excel, CSV) to validate completeness before creating shipments/orders. Essential for deciding whether to proceed with automation or send a follow-up email requesting missing information. Also useful for data quality metrics and reporting.",
+         "parameters":{
+            "event_data":{
+               "type":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Type of event triggering completeness check (e.g., 'document_upload')"
+               },
+               "id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Unique event identifier"
+               },
+               "workflow_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Workflow identifier"
+               },
+               "shipper_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Shipper identifier"
+               },
+               "agent_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Agent identifier (e.g., SAM, TRACY)"
+               },
+               "parent_request_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Unique identifier for the request"
+               }
+            },
+            "configurations":{
+               "doc_type":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Type of document being verified (e.g., 'invoice', 'waybill'). Determines default mandatory/optional keys"
+               },
+               "mandatory_keys":{
+                  "type":"array",
+                  "required":false,
+                  "description":"List of mandatory keys that must be present in the document data. If not provided, defaults based on doc_type and mode are used from backend"
+               },
+               "optional_keys":{
+                  "type":"array",
+                  "required":false,
+                  "description":"List of optional keys that may be present in the document data. If not provided, defaults based on doc_type are used"
+               }
+            },
+            "data":{
+               "extracted_document_data":{
+                  "type":"object",
+                  "required":true,
+                  "description":"The extracted document fields to validate (populated by previous extraction action). Can include nested structures like pickup/delivery addresses, arrays like reference_numbers, etc."
+               }
+            }
+         },
+         "returns":{
+            "mandatory_completeness":{
+               "type":"number",
+               "description":"Percentage (0.0 to 1.0) of mandatory keys that are present and valid"
+            },
+            "mandatory_keys_results":{
+               "type":"array",
+               "description":"Detailed results for each mandatory key with present_count, expected_count, and completeness score"
+            },
+            "optional_completeness":{
+               "type":"number",
+               "description":"Percentage (0.0 to 1.0) of optional keys that are present and valid"
+            },
+            "optional_keys_results":{
+               "type":"array",
+               "description":"Detailed results for each optional key with present_count, expected_count, and completeness score"
+            },
+            "audit":{
+               "type":"array",
+               "description":"Array of audit logs with completeness details and expected fields"
+            }
+         },
+         "api":{
+            "endpoint":"/api/v1/fourkites_llm/check_completeness",
+            "http_method":"POST",
+            "base_url_prod":"https://service.ng.fourkites.com/ai-agent-actions",
+            "base_url_dev":"https://service-dev.ng-np.fourkites.com/ai-agent-actions",
+            "authentication":{
+               "type":"Basic",
+               "header":"Authorization",
+               "value_format":"Basic <super_admin_basic_auth>"
+            },
+            "request_format":{
+               "configurations":"Required object with doc_type, optional mandatory_keys/optional_keys",
+               "data":"Required object with extracted document data to validate",
+               "event_data":"Required object with shipper_id, agent_id, workflow details"
+            },
+            "response_format":{
+               "data":"Object with mandatory_completeness, optional_completeness scores and detailed key results",
+               "audit":"Array of audit logs"
+            },
+            "timeout":{
+               "default_seconds":30
+            },
+            "retry_policy":{
+               "enabled":true,
+               "max_retries":3,
+               "backoff_seconds":5
+            }
+         },
+         "prerequisites":[
+            "Valid shipper_id and agent_id",
+            "Extracted document data from previous action",
+            "Authentication credentials (super_admin_basic_auth)",
+            "Known document type (invoice, waybill, etc.)"
+         ],
+         "alternatives":[
+            "Custom validation logic in workflow",
+            "Manual data review"
+         ],
+         "example_usage":{
+            "description":"Validate invoice data completeness with custom mandatory fields",
+            "request":{
+               "configurations":{
+                  "doc_type":"invoice",
+                  "mandatory_keys":[
+                     "invoice_number",
+                     "awb_number"
+                  ],
+                  "optional_keys":[
+                     "dummy_field"
+                  ]
+               },
+               "data":{
+                  "mode":"PARCEL",
+                  "carrier":"",
+                  "service":"",
+                  "load_number":"25DE26075471092988",
+                  "reference_numbers":[
+                     "809878079",
+                     "8035347564",
+                     "38089327"
+                  ],
+                  "pickup":{
+                     "name":"",
+                     "address_line":"",
+                     "city":"",
+                     "state":"DE",
+                     "country":"Germany"
+                  },
+                  "delivery":{
+                     "name":"",
+                     "address_line":"",
+                     "city":"",
+                     "state":"US",
+                     "country":"United States"
+                  }
+               },
+               "event_data":{
+                  "type":"document_upload",
+                  "id":"abcd-1234",
+                  "workflow_id":"workflow-5678",
+                  "shipper_id":"shipper-001",
+                  "agent_id":"agent-xyz",
+                  "parent_request_id":"request-9999"
+               }
+            },
+            "expected_response":{
+               "data":{
+                  "mandatory_completeness":0.85,
+                  "mandatory_keys_results":[
+                     {
+                        "key":"invoice_number",
+                        "present_count":1,
+                        "expected_count":1,
+                        "completeness":1.0
+                     },
+                     {
+                        "key":"awb_number",
+                        "present_count":0,
+                        "expected_count":1,
+                        "completeness":0.0
+                     }
+                  ],
+                  "optional_completeness":0.67,
+                  "optional_keys_results":[
+                     {
+                        "key":"dummy_field",
+                        "present_count":2,
+                        "expected_count":3,
+                        "completeness":0.67
+                     }
+                  ]
+               }
+            }
+         },
+         "additional_examples":[
+            {
+               "description":"Validate waybill data using default mandatory fields for ocean mode",
+               "request":{
+                  "configurations":{
+                     "doc_type":"waybill"
+                  },
+                  "data":{
+                     "mode":"OCEAN",
+                     "bol_number":"BOL12345",
+                     "booking_number":"BK67890",
+                     "container_numbers":[
+                        "CONT001"
+                     ],
+                     "carrier":"Ocean Carrier Inc",
+                     "port_of_loading":{
+                        "city":"Shanghai",
+                        "country":"China"
+                     },
+                     "port_of_discharge":{
+                        "city":"Los Angeles",
+                        "country":"USA"
+                     }
+                  },
+                  "event_data":{
+                     "type":"document_upload",
+                     "agent_id":"SAM",
+                     "shipper_id":"shipper-001",
+                     "parent_request_id":"req-123",
+                     "workflow_id":"waybill-validation"
+                  }
+               },
+               "note":"Backend will use default mandatory keys for ocean waybill: bol_number, booking_number, container_numbers, carrier, port_of_loading, port_of_discharge"
+            },
+            {
+               "description":"Decision logic - proceed or request more info based on completeness",
+               "workflow_logic":"If mandatory_completeness >= 0.8 then create_shipment else send_follow_up_email_requesting_missing_fields"
+            }
+         ]
+      },
+      {
+         "action_name":"Extract Data",
+         "class_name":"ExtractData",
+         "method_name":"execute",
+         "domain":"Document Processing",
+         "action_path":"ai_agent_actions.actions.api.v1.fourkites_llm.extract_data",
+         "file_path":"ai_agent_actions/actions/api/v1/fourkites_llm/extract_data.py",
+         "description":"Leverages FourKites Vision LLM General Intelligence to extract custom data from PDF or image files (.png, .jpeg, .jpg) with extensive configurability. Allows defining custom label definitions, output JSON templates, and system/human prompts to fine-tune extraction accuracy. Supports preprocessing, reflection mode, and batch processing for optimal results.",
+         "purpose":"Generic, highly configurable data extraction from documents when you need custom fields not covered by specialized extractors. Ideal for extracting tracking numbers, reference IDs, dates, or any custom fields from invoices, waybills, or custom documents",
+         "when_to_use":"Use when specialized extractors (like Shipment Extract Data PDF or Order Extract Data PDF) don't cover your specific data extraction needs. Perfect for custom document types, extracting non-standard fields, or when you need full control over extraction prompts and output format. Also use for image-based documents.",
+         "parameters":{
+            "event_data":{
+               "type":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Type of event triggering extraction (e.g., 'document_upload', 'Email')"
+               },
+               "id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Unique event identifier"
+               },
+               "file_name":{
+                  "type":"string",
+                  "required":false,
+                  "description":"Original filename of the document"
+               },
+               "workflow_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Workflow identifier"
+               },
+               "shipper_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Shipper identifier"
+               },
+               "agent_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Agent identifier (e.g., SAM, TRACY)"
+               },
+               "parent_request_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Unique identifier for the request"
+               }
+            },
+            "configurations":{
+               "preprocess":{
+                  "type":"boolean",
+                  "required":false,
+                  "default":false,
+                  "description":"Whether to preprocess the document (e.g., image enhancement, rotation correction)"
+               },
+               "processing_format":{
+                  "type":"string",
+                  "required":false,
+                  "default":"png",
+                  "description":"Format for processing: 'png' for higher memory footprint/accuracy, 'jpeg' for lower memory/faster processing"
+               },
+               "batch_size":{
+                  "type":"number",
+                  "required":false,
+                  "default":2,
+                  "description":"Batch size for LLM processing (chunking). Higher values = faster but more memory"
+               },
+               "label_definitions":{
+                  "type":"object",
+                  "required":true,
+                  "description":"Definitions of labels/fields to extract. Each key is the field name, value is the description/instruction for extraction",
+                  "example":{
+                     "tracking_number":"This is the 'Tracking Number' or similar, return empty if not available",
+                     "invoice_date":"Invoice date in YYYY-MM-DD format",
+                     "total_amount":"Total invoice amount as a number"
+                  }
+               },
+               "custom_output_json_template":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Expected JSON output structure as a string template. Must match the structure of label_definitions",
+                  "example":"[{\\\"tracking_number\\\": \\\"\\\", \\\"invoice_date\\\": \\\"\\\", \\\"total_amount\\\": \\\"\\\"}]"
+               },
+               "custom_system_prompt":{
+                  "type":"string",
+                  "required":false,
+                  "default":"You are an AI assistant that helps people extract specified data from the images, Return the data in a JSON structured that could be nested and meaningful way, also make sure the keys of json doesnt contain the starting numbers like (1.) or (2.), do not repeat or add any dummy values be super authentic",
+                  "description":"Custom instructions for the LLM to guide extraction behavior"
+               },
+               "custom_human_prompt":{
+                  "type":"string",
+                  "required":false,
+                  "default":"",
+                  "description":"Additional user-specific instructions for the LLM"
+               },
+               "reflection":{
+                  "type":"boolean",
+                  "required":false,
+                  "default":false,
+                  "description":"Enables self-reflection mode where LLM reviews its own extraction to improve accuracy (slower but more accurate)"
+               }
+            },
+            "data":{
+               "signed_url":{
+                  "type":"string",
+                  "required":true,
+                  "description":"S3 pre-signed URL of the PDF or image file from which data is extracted"
+               }
+            }
+         },
+         "returns":{
+            "extracted_data":{
+               "type":"object",
+               "description":"JSON-structured data extracted from the document based on label_definitions and custom_output_json_template"
+            },
+            "audit":{
+               "type":"array",
+               "description":"Array of audit logs with extraction details including original_file_name, page_numbers, document_type, and extracted_data"
+            }
+         },
+         "api":{
+            "endpoint":"/api/v1/fourkites_llm/extract_data",
+            "http_method":"POST",
+            "base_url_prod":"https://service.ng.fourkites.com/ai-agent-actions",
+            "base_url_dev":"https://service-dev.ng-np.fourkites.com/ai-agent-actions",
+            "authentication":{
+               "type":"Basic",
+               "header":"Authorization",
+               "value_format":"Basic <super_admin_basic_auth>"
+            },
+            "request_format":{
+               "configurations":"Required object with label_definitions, custom_output_json_template, and optional tuning parameters",
+               "data":"Required object with signed_url",
+               "event_data":"Required object with shipper_id, agent_id, workflow details"
+            },
+            "response_format":{
+               "data":"Object with extracted_data matching the custom_output_json_template structure",
+               "audit":"Array of audit logs with detailed extraction metadata"
+            },
+            "timeout":{
+               "default_seconds":120
+            },
+            "retry_policy":{
+               "enabled":true,
+               "max_retries":3,
+               "backoff_seconds":10
+            }
+         },
+         "prerequisites":[
+            "Valid shipper_id and agent_id",
+            "S3 pre-signed URL for the PDF or image document",
+            "Well-defined label_definitions with clear extraction instructions",
+            "custom_output_json_template matching the expected output structure",
+            "Authentication credentials (super_admin_basic_auth)",
+            "Document must be in supported format: .pdf, .png, .jpeg, .jpg"
+         ],
+         "alternatives":[
+            "Shipment - Extract Data - PDF (specialized for waybills)",
+            "Order - Extract Data - PDF (specialized for purchase orders/invoices)",
+            "Load - Extract Data - Excel (for spreadsheet data)",
+            "Document Classifier Generic (for classification before extraction)"
+         ],
+         "example_usage":{
+            "description":"Extract custom tracking number from delivery receipt PDF",
+            "request":{
+               "configurations":{
+                  "preprocess":false,
+                  "processing_format":"png",
+                  "batch_size":2,
+                  "label_definitions":{
+                     "tracking_number":"This is the 'Tracking Number' or similar, return empty if not available"
+                  },
+                  "custom_output_json_template":"[{\\\"tracking_number\\\": \\\"\\\"}]",
+                  "custom_system_prompt":"You are an AI assistant that helps people extract specified data from the images, Return the data in a JSON structured that could be nested and meaningful way, also make sure the keys of json doesnt contain the starting numbers like (1.) or (2.), do not repeat or add any dummy values be super authentic",
+                  "custom_human_prompt":"",
+                  "reflection":false
+               },
+               "data":{
+                  "signed_url":"https://example-bucket.s3.amazonaws.com/document.pdf?signature=..."
+               },
+               "event_data":{
+                  "type":"document_upload",
+                  "id":"doc-5678",
+                  "file_name":"document.pdf",
+                  "workflow_id":"workflow-1234",
+                  "shipper_id":"shipper-001",
+                  "agent_id":"agent-xyz",
+                  "parent_request_id":"request-9999"
+               }
+            },
+            "expected_response":{
+               "data":{
+                  "extracted_data":{
+                     "tracking_number":"123456789"
+                  }
+               },
+               "audit":[
+                  {
+                     "request_id":"request-9999",
+                     "company_id":"shipper-001",
+                     "step_id":"EXTRACT_DATA",
+                     "action":"EXTRACT_DATA",
+                     "status":"SUCCESS",
+                     "data":{
+                        "original_file_name":"document.pdf",
+                        "page_numbers":[
+                           1,
+                           2
+                        ],
+                        "extracted_data":{
+                           "tracking_number":"123456789"
+                        }
+                     }
+                  }
+               ]
+            }
+         },
+         "additional_examples":[
+            {
+               "description":"Extract multiple invoice fields with reflection for accuracy",
+               "request":{
+                  "configurations":{
+                     "preprocess":true,
+                     "processing_format":"png",
+                     "batch_size":3,
+                     "reflection":true,
+                     "label_definitions":{
+                        "invoice_number":"The invoice number, typically labeled as 'Invoice #' or 'Invoice No.'",
+                        "invoice_date":"Invoice date in any format, convert to YYYY-MM-DD",
+                        "total_amount":"Total invoice amount including currency symbol",
+                        "vendor_name":"Name of the vendor/supplier issuing the invoice",
+                        "po_number":"Purchase order number if present"
+                     },
+                     "custom_output_json_template":"{\\\"invoice_number\\\": \\\"\\\", \\\"invoice_date\\\": \\\"\\\", \\\"total_amount\\\": \\\"\\\", \\\"vendor_name\\\": \\\"\\\", \\\"po_number\\\": \\\"\\\"}"
+                  },
+                  "data":{
+                     "signed_url":"https://s3.amazonaws.com/invoices/invoice-2025-001.pdf?signature=..."
+                  },
+                  "event_data":{
+                     "type":"Email",
+                     "agent_id":"SAM",
+                     "shipper_id":"shipper-001",
+                     "parent_request_id":"req-invoice-001",
+                     "workflow_id":"invoice-processing"
+                  }
+               }
+            },
+            {
+               "description":"Extract data from scanned image (JPEG) with lower memory mode",
+               "request":{
+                  "configurations":{
+                     "preprocess":true,
+                     "processing_format":"jpeg",
+                     "batch_size":1,
+                     "label_definitions":{
+                        "bol_number":"Bill of Lading number from the scanned document"
+                     },
+                     "custom_output_json_template":"{\\\"bol_number\\\": \\\"\\\"}"
+                  },
+                  "data":{
+                     "signed_url":"https://s3.amazonaws.com/scans/scanned-bol.jpg?signature=..."
+                  },
+                  "event_data":{
+                     "type":"document_upload",
+                     "agent_id":"SAM",
+                     "shipper_id":"shipper-001",
+                     "parent_request_id":"req-scan-001",
+                     "workflow_id":"scan-processing"
+                  }
+               }
+            }
+         ]
+      },
+      {
+         "action_name":"Order - Create",
+         "class_name":"OrderCreate",
+         "method_name":"execute",
+         "domain":"Document Processing",
+         "action_path":"ai_agent_actions.actions.api.v1.fourkites_visibility.order_create",
+         "file_path":"ai_agent_actions/actions/api/v1/fourkites_visibility/order_create.py",
+         "description":"Creates purchase orders in the FourKites platform based on extracted data from invoices/PDFs using the Create Order service. Processes order creation details including PO number, delivery dates, amounts, addresses, seller information, and line items. Returns success/failure messages for each order creation attempt.",
+         "purpose":"Create purchase orders in FourKites system from extracted invoice/PO document data, enabling order visibility and tracking",
+         "when_to_use":"Use after extracting order data from invoice PDFs (via Order - Extract Data - PDF or Extract Data actions) to create orders in the FourKites platform. Typically used in invoice processing workflows where suppliers send purchase orders that need to be registered in the system.",
+         "parameters":{
+            "event_data":{
+               "type":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Type of event (fixed as 'ORDER')"
+               },
+               "id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Event identifier"
+               },
+               "shipper_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"ID of the associated shipper"
+               },
+               "workflow_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"ID of the workflow"
+               },
+               "agent_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"ID of the agent handling the event (e.g., SAM)"
+               },
+               "parent_request_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"ID of the original request tied to this event"
+               }
+            },
+            "configurations":{
+               "description":"No specific configurations required; empty object by default"
+            },
+            "data":{
+               "extracted_order_creation_data":{
+                  "type":"array",
+                  "required":true,
+                  "description":"Array of order objects to create (typically populated by Order - Extract Data - PDF action)",
+                  "fields":{
+                     "po_number":{
+                        "type":"string",
+                        "required":true,
+                        "description":"Purchase order number (mandatory)"
+                     },
+                     "delivery_date":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Required delivery date in ISO format (YYYY-MM-DD)"
+                     },
+                     "total_amount_excluding_taxes":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Total amount excluding taxes"
+                     },
+                     "total_tax_amount":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Total tax amount"
+                     },
+                     "currency_code":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Currency code (e.g., 'USD', 'EUR')"
+                     },
+                     "incoterms_code":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Incoterms code (e.g., 'FOB', 'CIF')"
+                     },
+                     "ship_from_organisation_name":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Ship-from organization name"
+                     },
+                     "ship_from_address":{
+                        "type":"object",
+                        "required":false,
+                        "description":"Ship-from address details",
+                        "fields":{
+                           "addressLine1":"string",
+                           "city":"string",
+                           "state":"string",
+                           "zip":"string",
+                           "country":"string"
+                        }
+                     },
+                     "ship_to_organisation_name":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Ship-to organization name"
+                     },
+                     "ship_to_address":{
+                        "type":"object",
+                        "required":false,
+                        "description":"Ship-to address details",
+                        "fields":{
+                           "addressLine1":"string",
+                           "city":"string",
+                           "state":"string",
+                           "zip":"string",
+                           "country":"string"
+                        }
+                     },
+                     "seller_id":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Seller ID"
+                     },
+                     "seller_organisation_name":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Seller organization name"
+                     },
+                     "seller_address":{
+                        "type":"object",
+                        "required":false,
+                        "description":"Seller address details",
+                        "fields":{
+                           "addressLine1":"string",
+                           "city":"string",
+                           "state":"string",
+                           "zip":"string",
+                           "country":"string"
+                        }
+                     },
+                     "line_items":{
+                        "type":"array",
+                        "required":false,
+                        "description":"Array of order line items",
+                        "item_fields":{
+                           "item_number":{
+                              "type":"string",
+                              "required":true,
+                              "description":"Item number (mandatory if line_items included)"
+                           },
+                           "requested_quantity":{
+                              "type":"string",
+                              "required":true,
+                              "description":"Requested quantity (mandatory if line_items included)"
+                           },
+                           "quantity_unit":{
+                              "type":"string",
+                              "required":false,
+                              "description":"Quantity unit (e.g., 'units', 'kg')"
+                           },
+                           "net_price":{
+                              "type":"string",
+                              "required":false,
+                              "description":"Net price per unit"
+                           },
+                           "net_amount":{
+                              "type":"string",
+                              "required":false,
+                              "description":"Net amount for the line item"
+                           },
+                           "product_id":{
+                              "type":"string",
+                              "required":false,
+                              "description":"Product ID"
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+         },
+         "returns":{
+            "messages":{
+               "type":"array",
+               "description":"Array of status messages for each order creation attempt (e.g., 'Order created successfully for PO Number: PO12345' or 'Failed to create order for PO Number: PO12345')"
+            }
+         },
+         "api":{
+            "endpoint":"/api/v1/fourkites_visibility/create_order",
+            "http_method":"POST",
+            "base_url_prod":"https://service.ng.fourkites.com/sam-ai-agent-actions",
+            "base_url_dev":"https://service-dev.ng-np.fourkites.com/sam-ai-agent-actions",
+            "authentication":{
+               "type":"Basic",
+               "header":"Authorization",
+               "value_format":"Basic <shipper_admin_basic_auth>"
+            },
+            "query_parameters":{
+               "shipper_id":{
+                  "required":true,
+                  "description":"Shipper identifier passed as query parameter"
+               }
+            },
+            "request_format":{
+               "configurations":"Empty object (no configurations needed)",
+               "data":"Required object with extracted_order_creation_data array",
+               "event_data":"Required object with type='ORDER', shipper_id, agent_id, workflow details"
+            },
+            "response_format":{
+               "data":"Object with messages array containing success/failure messages for each order"
+            },
+            "timeout":{
+               "default_seconds":60
+            },
+            "retry_policy":{
+               "enabled":true,
+               "max_retries":3,
+               "backoff_seconds":10
+            }
+         },
+         "prerequisites":[
+            "Valid shipper_id and agent_id",
+            "Extracted order data from previous action (typically Order - Extract Data - PDF)",
+            "At minimum, po_number must be present in extracted data",
+            "Authentication credentials (shipper_admin_basic_auth)",
+            "Create Order Client availability in FourKites platform"
+         ],
+         "alternatives":[
+            "Manual order creation via FourKites UI",
+            "Direct API integration with FourKites Order API"
+         ],
+         "example_usage":{
+            "description":"Create order from extracted invoice data",
+            "request":{
+               "configurations":{
+                  
+               },
+               "data":{
+                  "extracted_order_creation_data":[
+                     {
+                        "po_number":"PO12345",
+                        "delivery_date":"2025-07-01",
+                        "total_amount_excluding_taxes":"1000.00",
+                        "currency_code":"USD",
+                        "ship_from_organisation_name":"Supplier Inc.",
+                        "ship_from_address":{
+                           "addressLine1":"123 Main St",
+                           "city":"Chicago",
+                           "state":"IL",
+                           "zip":"60601",
+                           "country":"US"
+                        },
+                        "ship_to_organisation_name":"Buyer Corp",
+                        "ship_to_address":{
+                           "addressLine1":"456 Oak St",
+                           "city":"New York",
+                           "state":"NY",
+                           "zip":"10001",
+                           "country":"US"
+                        },
+                        "line_items":[
+                           {
+                              "item_number":"Item1",
+                              "requested_quantity":"10",
+                              "quantity_unit":"units",
+                              "net_price":"100.00",
+                              "product_id":"PROD001"
+                           }
+                        ]
+                     }
+                  ]
+               },
+               "event_data":{
+                  "type":"ORDER",
+                  "id":"101",
+                  "shipper_id":"shipper123",
+                  "workflow_id":"workflow456",
+                  "agent_id":"agent789",
+                  "parent_request_id":"req202"
+               }
+            },
+            "expected_response":{
+               "data":{
+                  "messages":[
+                     "Order created successfully for PO Number: PO12345"
+                  ]
+               }
+            }
+         },
+         "additional_examples":[
+            {
+               "description":"Create multiple orders from bulk invoice processing",
+               "request":{
+                  "data":{
+                     "extracted_order_creation_data":[
+                        {
+                           "po_number":"PO12345",
+                           "delivery_date":"2025-07-01",
+                           "currency_code":"USD",
+                           "ship_from_organisation_name":"Supplier A",
+                           "ship_to_organisation_name":"Buyer Corp"
+                        },
+                        {
+                           "po_number":"PO12346",
+                           "delivery_date":"2025-07-05",
+                           "currency_code":"EUR",
+                           "ship_from_organisation_name":"Supplier B",
+                           "ship_to_organisation_name":"Buyer Corp"
+                        }
+                     ]
+                  },
+                  "event_data":{
+                     "type":"ORDER",
+                     "agent_id":"SAM",
+                     "shipper_id":"shipper123",
+                     "parent_request_id":"bulk-order-001"
+                  }
+               },
+               "expected_response":{
+                  "data":{
+                     "messages":[
+                        "Order created successfully for PO Number: PO12345",
+                        "Order created successfully for PO Number: PO12346"
+                     ]
+                  }
+               }
+            },
+            {
+               "description":"Handling order creation failure",
+               "note":"If po_number is missing or invalid, response will contain failure message",
+               "expected_response":{
+                  "data":{
+                     "messages":[
+                        "Failed to create order for PO Number: PO_INVALID"
+                     ]
+                  }
+               }
+            }
+         ]
+      },
+      {
+         "action_name":"Load - Shipment Creation",
+         "class_name":"LoadShipmentCreation",
+         "method_name":"execute",
+         "domain":"Document Processing",
+         "action_path":"ai_agent_actions.actions.api.v1.fourkites_visibility.shipment_creation",
+         "file_path":"ai_agent_actions/actions/api/v1/fourkites_visibility/shipment_creation.py",
+         "description":"Creates shipments in the FourKites Platform based on extracted shipment data, supporting ocean, air, and ground transportation modes. Processes async requests if specified, retrieves carrier network details, handles shipment creation with appropriate stops, and provides audit logging. Returns tracking IDs for successfully created shipments.",
+         "purpose":"Create shipments in FourKites platform from extracted waybill/shipping document data, enabling end-to-end shipment visibility and tracking",
+         "when_to_use":"Use after extracting shipment data from waybill PDFs (via Shipment - Extract Data - PDF) to create actual shipment records in FourKites. Essential for ocean, air, and ground shipment onboarding workflows. Supports multi-modal shipments with containers, products, and full address details.",
+         "parameters":{
+            "event_data":{
+               "type":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Type of event (e.g., 'LOAD')"
+               },
+               "id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"Event identifier"
+               },
+               "shipper_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"ID of the shipper"
+               },
+               "workflow_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"ID of the workflow"
+               },
+               "agent_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"ID of the agent handling the event (e.g., SAM)"
+               },
+               "parent_request_id":{
+                  "type":"string",
+                  "required":true,
+                  "description":"ID of the original request tied to this event"
+               }
+            },
+            "configurations":{
+               "async":{
+                  "type":"boolean",
+                  "required":false,
+                  "default":false,
+                  "description":"Process asynchronously for large batch shipment creation"
+               },
+               "resume_url":{
+                  "type":"string",
+                  "required":false,
+                  "description":"URL to resume the action if asynchronous (required if async=true)"
+               },
+               "cancel_url":{
+                  "type":"string",
+                  "required":false,
+                  "description":"URL to cancel the action if asynchronous (required if async=true)"
+               }
+            },
+            "data":{
+               "extracted_shipment_data":{
+                  "type":"array",
+                  "required":true,
+                  "description":"Array of shipment objects containing mode-specific fields (ocean, air, ground). Typically populated by Shipment - Extract Data - PDF action",
+                  "ocean_shipment_fields":{
+                     "mode":{
+                        "type":"string",
+                        "required":true,
+                        "description":"Transportation mode: 'ocean'"
+                     },
+                     "booking_number":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Booking number"
+                     },
+                     "bol_number":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Bill of Lading number"
+                     },
+                     "carrier":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Carrier name"
+                     },
+                     "containers":{
+                        "type":"array",
+                        "required":false,
+                        "description":"Array of container objects",
+                        "container_fields":{
+                           "container_number":"string",
+                           "products":{
+                              "type":"array",
+                              "fields":{
+                                 "po_number":"string",
+                                 "item_number":"string",
+                                 "material_number":"string",
+                                 "item_description":"string",
+                                 "quantity":{
+                                    "value":"string",
+                                    "unit":"string"
+                                 },
+                                 "gross_weight":{
+                                    "value":"string",
+                                    "unit":"string"
+                                 },
+                                 "net_weight":{
+                                    "value":"string",
+                                    "unit":"string"
+                                 }
+                              }
+                           }
+                        }
+                     },
+                     "port_of_loading":{
+                        "type":"object",
+                        "required":false,
+                        "fields":{
+                           "city":"string",
+                           "country":"string"
+                        }
+                     },
+                     "port_of_discharge":{
+                        "type":"object",
+                        "required":false,
+                        "fields":{
+                           "city":"string",
+                           "country":"string"
+                        }
+                     },
+                     "references":{
+                        "type":"object",
+                        "required":false,
+                        "description":"Additional reference numbers"
+                     }
+                  },
+                  "air_shipment_fields":{
+                     "mode":{
+                        "type":"string",
+                        "required":true,
+                        "description":"Transportation mode: 'air'"
+                     },
+                     "mawb":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Master Air Waybill number"
+                     },
+                     "hawb":{
+                        "type":"string",
+                        "required":false,
+                        "description":"House Air Waybill number"
+                     },
+                     "orig_airport":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Origin airport code"
+                     },
+                     "dest_airport":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Destination airport code"
+                     },
+                     "carrier":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Air carrier name"
+                     },
+                     "shipper_address":{
+                        "type":"object",
+                        "required":false,
+                        "fields":{
+                           "name":"string",
+                           "address_line":"string",
+                           "city":"string",
+                           "state":"string",
+                           "country":"string",
+                           "zipcode":"string"
+                        }
+                     },
+                     "consignee_address":{
+                        "type":"object",
+                        "required":false,
+                        "fields":{
+                           "name":"string",
+                           "address_line":"string",
+                           "city":"string",
+                           "state":"string",
+                           "country":"string",
+                           "zipcode":"string"
+                        }
+                     },
+                     "gross_weight":{
+                        "type":"object",
+                        "required":false,
+                        "fields":{
+                           "value":"string",
+                           "unit":"string"
+                        }
+                     },
+                     "package_count":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Number of packages"
+                     },
+                     "product_description":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Product description"
+                     },
+                     "references":{
+                        "type":"object",
+                        "required":false,
+                        "fields":{
+                           "customer_po_number":"string"
+                        }
+                     }
+                  },
+                  "ground_shipment_fields":{
+                     "mode":{
+                        "type":"string",
+                        "required":true,
+                        "description":"Transportation mode: 'ground'"
+                     },
+                     "load_number":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Load number"
+                     },
+                     "carrier":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Carrier name"
+                     },
+                     "pickup":{
+                        "type":"object",
+                        "required":false,
+                        "fields":{
+                           "name":"string",
+                           "address_line":"string",
+                           "city":"string",
+                           "state":"string",
+                           "country":"string",
+                           "zipcode":"string"
+                        }
+                     },
+                     "delivery":{
+                        "type":"object",
+                        "required":false,
+                        "fields":{
+                           "name":"string",
+                           "address_line":"string",
+                           "city":"string",
+                           "state":"string",
+                           "country":"string",
+                           "zipcode":"string"
+                        }
+                     },
+                     "weight":{
+                        "type":"object",
+                        "required":false,
+                        "fields":{
+                           "value":"string",
+                           "unit":"string"
+                        }
+                     },
+                     "piece_count":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Number of pieces"
+                     },
+                     "product_description":{
+                        "type":"string",
+                        "required":false,
+                        "description":"Product description"
+                     },
+                     "references":{
+                        "type":"object",
+                        "required":false,
+                        "fields":{
+                           "po_numbers":"array of strings"
+                        }
+                     }
+                  }
+               }
+            }
+         },
+         "returns":{
+            "successful_shipments":{
+               "type":"array",
+               "description":"Array of successfully created shipments, each containing load_number and tracking_id"
+            }
+         },
+         "api":{
+            "endpoint":"/api/v1/fourkites_visibility/shipment_creation",
+            "http_method":"POST",
+            "base_url_prod":"https://service.ng.fourkites.com/sam-ai-agent-actions",
+            "base_url_dev":"https://service-dev.ng-np.fourkites.com/sam-ai-agent-actions",
+            "authentication":{
+               "type":"Basic",
+               "header":"Authorization",
+               "value_format":"Basic <shipper_admin_basic_auth>"
+            },
+            "query_parameters":{
+               "shipper_id":{
+                  "required":true,
+                  "description":"Shipper identifier passed as query parameter"
+               }
+            },
+            "request_format":{
+               "configurations":"Optional object for async processing settings",
+               "data":"Required object with extracted_shipment_data array containing mode-specific shipment details",
+               "event_data":"Required object with type='LOAD', shipper_id, agent_id, workflow details"
+            },
+            "response_format":{
+               "sync":{
+                  "structure":"data object with successful_shipments array containing load_number and tracking_id"
+               },
+               "async":{
+                  "initial":"Processing status message",
+                  "final":"successful_shipments array in resume data"
+               }
+            },
+            "timeout":{
+               "default_seconds":120
+            },
+            "retry_policy":{
+               "enabled":true,
+               "max_retries":3,
+               "backoff_seconds":10
+            }
+         },
+         "prerequisites":[
+            "Valid shipper_id and agent_id",
+            "Extracted shipment data from previous action (typically Shipment - Extract Data - PDF)",
+            "Valid carrier names and addresses in extracted data",
+            "Authentication credentials (shipper_admin_basic_auth)",
+            "Carrier network details available in FourKites platform"
+         ],
+         "alternatives":[
+            "Manual shipment creation via FourKites UI",
+            "Direct Load API integration",
+            "Shipment - Create Ocean Shipment (specialized for ocean only)"
+         ],
+         "example_usage":{
+            "description":"Create ocean shipment from extracted waybill data",
+            "request":{
+               "configurations":{
+                  "async":false
+               },
+               "data":{
+                  "extracted_shipment_data":[
+                     {
+                        "mode":"ocean",
+                        "booking_number":"BK123456",
+                        "bol_number":"BOL789012",
+                        "carrier":"Ocean Network Express",
+                        "containers":[
+                           {
+                              "container_number":"CONT001",
+                              "products":[
+                                 {
+                                    "po_number":"PO12345",
+                                    "item_number":"ITEM001",
+                                    "quantity":{
+                                       "value":"100",
+                                       "unit":"units"
+                                    }
+                                 }
+                              ]
+                           }
+                        ],
+                        "port_of_loading":{
+                           "city":"Shanghai",
+                           "country":"China"
+                        },
+                        "port_of_discharge":{
+                           "city":"Los Angeles",
+                           "country":"USA"
+                        }
+                     }
+                  ]
+               },
+               "event_data":{
+                  "type":"LOAD",
+                  "shipper_id":"shipper-001",
+                  "agent_id":"SAM",
+                  "workflow_id":"ocean-shipment-workflow",
+                  "parent_request_id":"req-ocean-001"
+               }
+            },
+            "expected_response":{
+               "data":{
+                  "successful_shipments":[
+                     {
+                        "load_number":"L-12345678",
+                        "tracking_id":"15594546"
+                     }
+                  ]
+               }
+            }
+         },
+         "additional_examples":[
+            {
+               "description":"Create air shipment with MAWB/HAWB",
+               "request":{
+                  "data":{
+                     "extracted_shipment_data":[
+                        {
+                           "mode":"air",
+                           "mawb":"020-12345678",
+                           "hawb":"ABC123456",
+                           "orig_airport":"LAX",
+                           "dest_airport":"JFK",
+                           "carrier":"Air Carrier Inc",
+                           "shipper_address":{
+                              "name":"Shipper Corp",
+                              "city":"Los Angeles",
+                              "state":"CA",
+                              "country":"USA"
+                           },
+                           "consignee_address":{
+                              "name":"Receiver Inc",
+                              "city":"New York",
+                              "state":"NY",
+                              "country":"USA"
+                           },
+                           "gross_weight":{
+                              "value":"500",
+                              "unit":"kg"
+                           },
+                           "package_count":"10"
+                        }
+                     ]
+                  },
+                  "event_data":{
+                     "type":"LOAD",
+                     "agent_id":"SAM",
+                     "shipper_id":"shipper-001"
+                  }
+               }
+            },
+            {
+               "description":"Create ground/TL shipment with pickup and delivery addresses",
+               "request":{
+                  "data":{
+                     "extracted_shipment_data":[
+                        {
+                           "mode":"ground",
+                           "load_number":"LOAD12345",
+                           "carrier":"Ground Freight Inc",
+                           "pickup":{
+                              "name":"Warehouse A",
+                              "address_line":"123 Industrial Pkwy",
+                              "city":"Chicago",
+                              "state":"IL",
+                              "country":"USA",
+                              "zipcode":"60601"
+                           },
+                           "delivery":{
+                              "name":"Distribution Center B",
+                              "address_line":"456 Commerce St",
+                              "city":"Dallas",
+                              "state":"TX",
+                              "country":"USA",
+                              "zipcode":"75201"
+                           },
+                           "weight":{
+                              "value":"2000",
+                              "unit":"lbs"
+                           },
+                           "piece_count":"25",
+                           "references":{
+                              "po_numbers":[
+                                 "PO001",
+                                 "PO002"
+                              ]
+                           }
+                        }
+                     ]
+                  },
+                  "event_data":{
+                     "type":"LOAD",
+                     "agent_id":"SAM",
+                     "shipper_id":"shipper-001"
+                  }
+               }
+            },
+            {
+               "description":"Async batch creation for multiple shipments from bulk upload",
+               "request":{
+                  "configurations":{
+                     "async":true,
+                     "resume_url":"https://api.pipedream.com/v1/sources/p_ABC/resume/token123",
+                     "cancel_url":"https://api.pipedream.com/v1/sources/p_ABC/cancel/token123"
+                  },
+                  "data":{
+                     "extracted_shipment_data":[
+                        {
+                           "mode":"ocean",
+                           "bol_number":"BOL001"
+                        },
+                        {
+                           "mode":"ocean",
+                           "bol_number":"BOL002"
+                        },
+                        {
+                           "mode":"air",
+                           "mawb":"MAWB001"
+                        }
+                     ]
+                  },
+                  "event_data":{
+                     "type":"LOAD",
+                     "agent_id":"SAM",
+                     "shipper_id":"shipper-001"
+                  }
+               }
+            }
+         ]
+      }
+   ],
+   "workflow_patterns":{
+      "workflow_patterns":{
+         "create_shipment_from_waybill":{
+            "description":"Reads the waybill document and creates a shipment in platform",
+            "action_sequence":[
+               "document_classifer",
+               "shipment_extract_data_pdf",
+               "shipment_creation"
+            ],
+            "example_use_case":"Reads emails and if there is a waybill document it will create shipment"
+         },
+         "create_order_from_invoice":{
+            "description":"Process incoming emails, extract invoices, and apply to orders",
+            "action_sequence":[
+               "document_classifer",
+               "extract_data",
+               "create_order"
+            ],
+            "example_use_case":"Automated updates for invoice data"
+         }
+      }
+   },
+   "common_configuration":{
+      "environment_variables":{
+         "ACTION_SERVICE_URL":"Base URL for AI Agent Actions API (default: https://service-dev.ng-np.fourkites.com)",
+         "AUTH_TOKEN":"Basic auth token for API calls",
+         "ANTHROPIC_API_KEY":"Required for LLM-powered actions",
+         "OPENAI_API_KEY":"Alternative to Anthropic for LLM actions"
+      },
+      "authentication":{
+         "type":"Basic Auth",
+         "format":"Authorization: Basic <base64_encoded_credentials>",
+         "credentials":"digital-workforce@fourkites.com:F0urK it3sR0cks!@#"
+      }
+   },
+   "notes":{
+      "code_generation_guidelines":[
+         "All actions use HTTP API calls (not Python imports)",
+         "Use async/await for all HTTP requests",
+         "Handle errors with proper try/except blocks",
+         "Always check response status codes",
+         "Extract data from state dictionary (state.get('data', {}))",
+         "Pass state between nodes (TypedDict pattern)",
+         "Use environment variables for base URLs and auth",
+         "Include audit logs in all responses"
+      ],
+      "langgraph_integration":[
+         "Define state as TypedDict with all required fields",
+         "Each node is an async function that takes state and returns state",
+         "Use conditional edges for branching logic",
+         "Implement loop nodes for iterating over collections (e.g., send_escalation_mail_loop)",
+         "Always handle errors gracefully and update state with error info"
+      ],
+      "best_practices":[
+         "Always use load_search_trigger before send_email to get scac_load_dict",
+         "Enable smart_action tracking for visibility",
+         "Use exact_match=true in load_get_details when you have specific load numbers",
+         "Set enable_webhook_calls=false for testing process_emails safely",
+         "Include parent_request_id for tracking across API calls",
+         "Use include_scac_grouped=true when sending carrier emails"
+      ]
+   }
+}
