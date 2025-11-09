@@ -141,7 +141,7 @@ async def seed_database():
     # Get base directory (project root)
     base_dir = Path(__file__).parent.parent.parent.parent
 
-    # Seed actions from both catalogues
+    # Seed actions from all catalogues
     total_seeded = 0
     total_updated = 0
 
@@ -159,6 +159,13 @@ async def seed_database():
         seeded2, updated2 = await seed_actions(session, catalog2_path)
         total_seeded += seeded2
         total_updated += updated2
+
+        # Seed from email_processing_action_catalogue.json (Email processing actions)
+        print("\nSeeding from email_processing_action_catalogue.json...")
+        catalog3_path = base_dir / "email_processing_action_catalogue.json"
+        seeded3, updated3 = await seed_actions(session, catalog3_path)
+        total_seeded += seeded3
+        total_updated += updated3
 
     print("\n" + "="*50)
     print(f"✓ Total: {total_seeded} new actions seeded, {total_updated} actions updated")

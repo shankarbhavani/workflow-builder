@@ -1,0 +1,341 @@
+{
+  "generated_at": "2025-02-09T00:00:00.000000",
+  "version": "1.0",
+  "description": "Email Processing action catalog for automated email reading and attachment management",
+  "actions": [
+    {
+      "action_name": "gmail_download_attachments_to_s3",
+      "class_name": "GmailDownloadAttachmentsToS3",
+      "method_name": "execute",
+      "domain": "Email Processing",
+      "action_path": "workflow_builder.actions.gmail_s3_action",
+      "file_path": "backend/app/api/endpoints/gmail_s3_action.py",
+      "description": "Read emails from Gmail using IMAP, download PDF attachments, upload to S3 bucket, and return presigned URLs for downstream workflow processing. Processes emails one by one, marks them as read after processing, and handles time range filtering. Perfect for automated document ingestion workflows.",
+      "purpose": "Automate the process of retrieving email attachments and making them available for downstream document processing actions",
+      "when_to_use": "Use at the beginning of document processing workflows when you need to read emails from a Gmail account, extract PDF attachments, and make them accessible via S3 presigned URLs. Ideal for workflows that process invoices, waybills, packing slips, or any PDF documents received via email.",
+      "parameters": {
+        "event_data": {
+          "shipper_id": {
+            "type": "string",
+            "required": true,
+            "description": "Shipper identifier for tracking and auditing"
+          },
+          "agent_id": {
+            "type": "string",
+            "required": true,
+            "description": "Agent identifier (e.g., SAM, TRACY, ALAN)"
+          },
+          "parent_request_id": {
+            "type": "string",
+            "required": false,
+            "description": "Parent request ID for workflow tracking"
+          },
+          "workflow_id": {
+            "type": "string",
+            "required": false,
+            "description": "Workflow ID for multi-step process tracking"
+          }
+        },
+        "configurations": {
+          "gmail_email": {
+            "type": "string",
+            "required": true,
+            "description": "Gmail email address to read emails from (e.g., 'yeleswarapushankar@gmail.com')"
+          },
+          "gmail_app_password": {
+            "type": "string",
+            "required": true,
+            "description": "Gmail app password for authentication. Note: This is NOT your regular Gmail password. You must generate an app-specific password from Google Account settings under Security > 2-Step Verification > App passwords"
+          },
+          "time_range_start": {
+            "type": "string",
+            "required": false,
+            "description": "Start time for email search in ISO 8601 format (e.g., '2025-02-01T00:00:00'). If not provided, will use Gmail's default time window"
+          },
+          "time_range_end": {
+            "type": "string",
+            "required": false,
+            "description": "End time for email search in ISO 8601 format (e.g., '2025-02-09T23:59:59'). If not provided, will search up to current time"
+          },
+          "s3_folder": {
+            "type": "string",
+            "required": false,
+            "default": "bhavani",
+            "description": "S3 folder path where attachments will be uploaded. Files will be stored as {s3_folder}/{timestamp}_{filename}.pdf"
+          }
+        }
+      },
+      "returns": {
+        "attachments": {
+          "type": "object",
+          "description": "Dictionary mapping filename to presigned S3 URL. Example: {'invoice.pdf': 'https://s3.amazonaws.com/...', 'waybill.pdf': 'https://s3.amazonaws.com/...'}"
+        },
+        "processed_emails": {
+          "type": "number",
+          "description": "Total number of emails that were processed (only emails with PDF attachments)"
+        },
+        "total_attachments": {
+          "type": "number",
+          "description": "Total number of PDF attachments downloaded and uploaded to S3"
+        },
+        "s3_bucket": {
+          "type": "string",
+          "description": "S3 bucket name where files were uploaded (e.g., 'fk-sam-files')"
+        },
+        "s3_folder": {
+          "type": "string",
+          "description": "S3 folder path where files were uploaded"
+        },
+        "upload_failures": {
+          "type": "array",
+          "description": "List of filenames that failed to upload to S3 (only present if there were failures)"
+        },
+        "audit": {
+          "type": "array",
+          "description": "Detailed audit trail of the entire process including Gmail connection, email processing, S3 uploads, and any errors"
+        }
+      },
+      "api": {
+        "endpoint": "/api/actions/execute/gmail_download_attachments_to_s3",
+        "http_method": "POST",
+        "base_url_env": "WORKFLOW_BUILDER_API_URL",
+        "authentication": {
+          "type": "Bearer",
+          "header": "Authorization",
+          "value_format": "Bearer <jwt_token>"
+        },
+        "request_format": {
+          "event_data": "Required object with shipper_id, agent_id",
+          "configurations": "Required object with gmail_email, gmail_app_password, and optional time range/s3_folder"
+        },
+        "response_format": {
+          "data": {
+            "attachments": "object mapping filename to presigned URL",
+            "processed_emails": "number",
+            "total_attachments": "number",
+            "s3_bucket": "string",
+            "s3_folder": "string"
+          },
+          "audit": "array of audit log entries"
+        },
+        "timeout": {
+          "default_seconds": 120
+        },
+        "retry_policy": {
+          "enabled": true,
+          "max_retries": 2,
+          "backoff_seconds": 10
+        }
+      },
+      "prerequisites": [
+        "Valid Gmail account with IMAP enabled",
+        "Gmail app password generated (not regular account password)",
+        "AWS S3 bucket 'fk-sam-files' exists and is accessible",
+        "AWS credentials configured in environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)",
+        "Target folder 'bhavani' exists in S3 bucket or will be created automatically"
+      ],
+      "alternatives": [
+        "process_emails from action_catalogue.json (more complex, includes categorization and webhooks)",
+        "Manual email download and S3 upload"
+      ],
+      "example_usage": {
+        "description": "Download PDF attachments from Gmail and upload to S3 for document processing workflow",
+        "request": {
+          "event_data": {
+            "shipper_id": "shipper-123",
+            "agent_id": "SAM",
+            "parent_request_id": "req-email-001",
+            "workflow_id": "email-to-shipment-workflow"
+          },
+          "configurations": {
+            "gmail_email": "yeleswarapushankar@gmail.com",
+            "gmail_app_password": "abcd efgh ijkl mnop",
+            "time_range_start": "2025-02-08T00:00:00",
+            "time_range_end": "2025-02-09T23:59:59",
+            "s3_folder": "bhavani"
+          }
+        },
+        "expected_response": {
+          "data": {
+            "attachments": {
+              "invoice_12345.pdf": "https://fk-sam-files.s3.amazonaws.com/bhavani/20250209_143022_invoice_12345.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&...",
+              "waybill_67890.pdf": "https://fk-sam-files.s3.amazonaws.com/bhavani/20250209_143025_waybill_67890.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&..."
+            },
+            "processed_emails": 2,
+            "total_attachments": 2,
+            "s3_bucket": "fk-sam-files",
+            "s3_folder": "bhavani"
+          },
+          "audit": [
+            {
+              "step": "START",
+              "action": "gmail_download_attachments_to_s3",
+              "shipper_id": "shipper-123",
+              "agent_id": "SAM",
+              "timestamp": "2025-02-09T14:30:15.000000"
+            },
+            {
+              "step": "GMAIL_PROCESS",
+              "status": "COMPLETED",
+              "emails_found": 2,
+              "total_attachments": 2
+            },
+            {
+              "step": "S3_UPLOAD",
+              "status": "COMPLETED",
+              "successful_uploads": 2,
+              "failed_uploads": 0
+            },
+            {
+              "step": "COMPLETE",
+              "status": "SUCCESS",
+              "timestamp": "2025-02-09T14:30:45.000000"
+            }
+          ]
+        }
+      },
+      "additional_examples": [
+        {
+          "description": "Process all unread emails without time range filter",
+          "request": {
+            "event_data": {
+              "shipper_id": "shipper-123",
+              "agent_id": "SAM"
+            },
+            "configurations": {
+              "gmail_email": "yeleswarapushankar@gmail.com",
+              "gmail_app_password": "abcd efgh ijkl mnop",
+              "s3_folder": "bhavani"
+            }
+          },
+          "note": "Will process all unread emails with PDF attachments, no time filtering"
+        },
+        {
+          "description": "Integration with document_classifier for multi-document processing",
+          "workflow_sequence": [
+            "gmail_download_attachments_to_s3 → Returns presigned URLs",
+            "document_classifier → Input: signed_url from gmail action, splits combined PDFs",
+            "shipment_extract_data_pdf → Input: classified waybill URL",
+            "shipment_creation → Input: extracted shipment data"
+          ],
+          "note": "Use attachments dictionary to iterate over each file and pass to downstream actions"
+        },
+        {
+          "description": "Error handling - No PDF attachments found",
+          "expected_response": {
+            "data": {
+              "attachments": {},
+              "processed_emails": 0,
+              "total_attachments": 0,
+              "s3_bucket": "fk-sam-files",
+              "s3_folder": "bhavani"
+            },
+            "audit": [
+              {
+                "step": "GMAIL_PROCESS",
+                "status": "COMPLETED",
+                "message": "No emails with PDF attachments found"
+              }
+            ]
+          }
+        },
+        {
+          "description": "Partial upload failure - Continue processing",
+          "expected_response": {
+            "data": {
+              "attachments": {
+                "invoice.pdf": "https://s3-url..."
+              },
+              "processed_emails": 2,
+              "total_attachments": 2,
+              "upload_failures": [
+                "corrupted_file.pdf"
+              ],
+              "s3_bucket": "fk-sam-files",
+              "s3_folder": "bhavani"
+            },
+            "audit": [
+              {
+                "step": "S3_UPLOAD",
+                "status": "COMPLETED",
+                "successful_uploads": 1,
+                "failed_uploads": 1,
+                "failed_files": ["corrupted_file.pdf"]
+              }
+            ]
+          },
+          "note": "Action continues processing even if individual files fail. Check upload_failures array for error details."
+        }
+      ],
+      "notes": {
+        "gmail_app_password_setup": [
+          "1. Go to Google Account settings (myaccount.google.com)",
+          "2. Navigate to Security",
+          "3. Enable 2-Step Verification if not already enabled",
+          "4. Under '2-Step Verification', click 'App passwords'",
+          "5. Select 'Mail' and 'Other (Custom name)', give it a name like 'Workflow Builder'",
+          "6. Copy the 16-character password (format: 'abcd efgh ijkl mnop')",
+          "7. Use this app password in the gmail_app_password configuration field"
+        ],
+        "s3_file_naming": [
+          "Files are uploaded with timestamp prefix to avoid conflicts",
+          "Format: {s3_folder}/{YYYYMMDD_HHMMSS}_{original_filename}",
+          "Example: bhavani/20250209_143022_invoice.pdf",
+          "If same filename is uploaded again, it replaces the old file with new timestamp"
+        ],
+        "presigned_url_expiration": [
+          "Presigned URLs are valid for 24 hours from generation time",
+          "After 24 hours, URLs will return 403 Forbidden error",
+          "For long-running workflows, consider storing files and regenerating URLs if needed"
+        ],
+        "email_marking": [
+          "Emails are marked as read ONLY if they contain PDF attachments",
+          "Emails without PDF attachments are ignored and remain unread",
+          "This prevents re-processing of the same emails in subsequent runs"
+        ],
+        "best_practices": [
+          "Use time_range filters to process specific date ranges instead of all emails",
+          "Monitor upload_failures array to identify problematic files",
+          "For production, use dedicated Gmail account for automation",
+          "Consider using Gmail filters to organize emails before processing",
+          "Test with small time ranges first before processing large volumes"
+        ]
+      }
+    }
+  ],
+  "workflow_patterns": {
+    "email_to_document_processing": {
+      "description": "Read emails, download PDF attachments, classify documents, and create shipments",
+      "action_sequence": [
+        "gmail_download_attachments_to_s3",
+        "document_classifier",
+        "shipment_extract_data_pdf",
+        "shipment_creation"
+      ],
+      "example_use_case": "Automated shipment creation from email attachments"
+    },
+    "invoice_processing_from_email": {
+      "description": "Read emails, download invoices, extract data, and create orders",
+      "action_sequence": [
+        "gmail_download_attachments_to_s3",
+        "extract_data",
+        "check_completeness",
+        "order_create"
+      ],
+      "example_use_case": "Automated invoice processing workflow"
+    }
+  },
+  "common_configuration": {
+    "environment_variables": {
+      "AWS_ACCESS_KEY_ID": "AWS access key for S3 operations",
+      "AWS_SECRET_ACCESS_KEY": "AWS secret key for S3 operations",
+      "AWS_REGION": "AWS region (default: us-east-1)",
+      "S3_BUCKET_NAME": "S3 bucket name (default: fk-sam-files)"
+    },
+    "authentication": {
+      "type": "Bearer Token (JWT)",
+      "format": "Authorization: Bearer <token>",
+      "note": "Obtain JWT token via /api/auth/login endpoint"
+    }
+  }
+}

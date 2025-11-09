@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     ACTION_SERVICE_AUTH_USER: str = "digital-workforce@fourkites.com"
     ACTION_SERVICE_AUTH_PASSWORD: str = "F0urK it3sR0cks!@#"
 
+    # External Action Service (for chat workflow generation)
+    EXTERNAL_ACTION_SERVICE_URL: str = "https://service-dev.ng-np.fourkites.com"
+
     # JWT Authentication
     SECRET_KEY: str = "your-secret-key-change-in-production-min-32-chars-long"
     ALGORITHM: str = "HS256"
@@ -39,6 +42,12 @@ class Settings(BaseSettings):
     AZURE_OPENAI_ENDPOINT: str
     AZURE_OPENAI_DEPLOYMENT_NAME: str
     AZURE_OPENAI_API_VERSION: str = "2024-12-01-preview"
+
+    # AWS S3 (for Gmail to S3 action)
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_REGION: str = "us-east-1"
+    S3_BUCKET_NAME: str = "fk-sam-files"
 
     model_config = SettingsConfigDict(
         env_file=".env",

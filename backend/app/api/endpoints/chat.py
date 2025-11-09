@@ -18,6 +18,7 @@ from app.schemas.chat import (
     ConversationListResponse
 )
 from app.services.workflow_agent import WorkflowAgent
+from app.services.action_service_client import action_service_client
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -87,6 +88,26 @@ async def chat(
         # Update session
         session.messages = updated_state["messages"]
         session.workflow_draft = updated_state.get("workflow_draft", {})
+
+        # Enrich workflow nodes with action metadata from external catalog
+        if session.workflow_draft and session.workflow_draft.get("nodes"):
+            # Fetch action lookup from external catalog
+            action_lookup = await action_service_client.build_action_lookup()
+
+            # Enrich each node with action_id, domain, and display_name
+            for node in session.workflow_draft["nodes"]:
+                if "data" in node and "action_name" in node["data"]:
+                    action_name = node["data"]["action_name"]
+                    matching_action = action_lookup.get(action_name)
+
+                    if matching_action:
+                        # Add action metadata to node data
+                        node["data"]["action_id"] = str(matching_action["id"]) if matching_action.get("id") else None
+                        node["data"]["domain"] = matching_action.get("domain")
+                        node["data"]["label"] = matching_action.get("display_name") or node["data"].get("label", action_name)
+                    else:
+                        # Log warning if action not found in external catalog
+                        print(f"Warning: Action '{action_name}' not found in external catalog")
 
         await db.commit()
         await db.refresh(session)
