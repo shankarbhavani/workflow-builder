@@ -511,14 +511,14 @@ export default function WorkflowCanvas() {
       )}
 
       {/* Main Content */}
-      <div className="flex-1 flex">
+      <div className="flex-1 flex overflow-hidden">
         {/* Action Library Sidebar */}
         <div className="w-80 border-r bg-gray-50">
           <ActionLibrary onActionSelect={onActionSelect} />
         </div>
 
         {/* Canvas */}
-        <div className="flex-1">
+        <div className="flex-1 h-full">
           <ReactFlow
             nodes={enrichedNodes}
             edges={edges}
