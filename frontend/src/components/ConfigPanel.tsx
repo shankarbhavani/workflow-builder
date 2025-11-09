@@ -3,6 +3,7 @@ import { Node } from 'reactflow';
 import { FileText } from 'lucide-react';
 import { Action } from '@/types/workflow.types';
 import { getTemplatesForAction, ParameterTemplate } from '@/data/parameterTemplates';
+import { api } from '@/services/api';
 
 interface ConfigPanelProps {
   selectedNode: Node | null;
@@ -14,6 +15,31 @@ export default function ConfigPanel({ selectedNode, onConfigChange, onClose }: C
   const [config, setConfig] = useState<Record<string, any>>({});
   const [activeTab, setActiveTab] = useState<'event_data' | 'configurations'>('event_data');
   const [availableTemplates, setAvailableTemplates] = useState<ParameterTemplate[]>([]);
+  const [action, setAction] = useState<Action | null>(null);
+  const [loadingAction, setLoadingAction] = useState(false);
+
+  // Fetch action data by ID when node changes
+  useEffect(() => {
+    const loadAction = async () => {
+      if (!selectedNode?.data.action_id) {
+        setAction(null);
+        return;
+      }
+
+      setLoadingAction(true);
+      try {
+        const fetchedAction = await api.getAction(selectedNode.data.action_id);
+        setAction(fetchedAction);
+      } catch (error) {
+        console.error('Failed to load action:', error);
+        setAction(null);
+      } finally {
+        setLoadingAction(false);
+      }
+    };
+
+    loadAction();
+  }, [selectedNode?.data.action_id]);
 
   // Initialize config from node data
   useEffect(() => {
@@ -49,7 +75,24 @@ export default function ConfigPanel({ selectedNode, onConfigChange, onClose }: C
     return null;
   }
 
-  const action: Action | undefined = selectedNode.data.action;
+  if (loadingAction) {
+    return (
+      <div className="w-96 bg-white border-l flex flex-col h-full">
+        <div className="p-4 border-b flex items-center justify-between bg-gray-50">
+          <h3 className="font-semibold">Configure Action</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="p-4 text-gray-500 flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+      </div>
+    );
+  }
 
   if (!action) {
     return (

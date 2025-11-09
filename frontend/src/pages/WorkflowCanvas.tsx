@@ -41,9 +41,23 @@ export default function WorkflowCanvas() {
   const [quickEditNode, setQuickEditNode] = useState<Node | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [isGeneratingSuggestion, setIsGeneratingSuggestion] = useState(false);
+  const [availableActions, setAvailableActions] = useState<Action[]>([]);
 
   // Initialize undo/redo system
   const workflowHistory = useWorkflowHistory(nodes, edges, setNodes, setEdges);
+
+  // Load available actions on mount
+  useEffect(() => {
+    const loadActions = async () => {
+      try {
+        const actions = await api.getActions();
+        setAvailableActions(actions);
+      } catch (error) {
+        console.error('Failed to load actions:', error);
+      }
+    };
+    loadActions();
+  }, []);
 
   // Wrap onEdgesChange to track edge deletions for undo/redo
   const onEdgesChange = useCallback(
@@ -159,14 +173,6 @@ export default function WorkflowCanvas() {
 
   const onActionSelect = useCallback(
     (action: Action) => {
-      console.log('onActionSelect - Received action:', {
-        action_name: action.action_name,
-        display_name: action.display_name,
-        hasParameters: !!action.parameters,
-        parametersKeys: action.parameters ? Object.keys(action.parameters) : [],
-        actionKeys: Object.keys(action),
-      });
-
       const nodeId = `node-${Date.now()}`;
       const newNode: Node = {
         id: nodeId,
@@ -177,8 +183,9 @@ export default function WorkflowCanvas() {
         },
         data: {
           action_name: action.action_name,
+          action_id: action.id, // Store only the ID, not the full object
           label: action.display_name,
-          action: action, // Include full action object
+          domain: action.domain, // Store domain for node styling
           config: {
             event_data: {},
             configurations: {},
@@ -192,19 +199,7 @@ export default function WorkflowCanvas() {
         },
       };
 
-      console.log('onActionSelect - Created node:', {
-        nodeId: nodeId,
-        hasAction: !!newNode.data.action,
-        actionInData: newNode.data.action,
-      });
-
-      setNodes((nds) => {
-        const updatedNodes = [...nds, newNode];
-        console.log('onActionSelect - After setNodes, checking last node:', {
-          lastNodeHasAction: !!updatedNodes[updatedNodes.length - 1].data.action,
-        });
-        return updatedNodes;
-      });
+      setNodes((nds) => [...nds, newNode]);
 
       // Record command
       workflowHistory.recordCommand(
@@ -217,14 +212,6 @@ export default function WorkflowCanvas() {
   );
 
   const onNodeClick: NodeMouseHandler = useCallback((event, node) => {
-    console.log('onNodeClick - Node data:', {
-      id: node.id,
-      label: node.data.label,
-      action_name: node.data.action_name,
-      hasAction: !!node.data.action,
-      actionKeys: node.data.action ? Object.keys(node.data.action) : [],
-      hasParameters: !!(node.data.action?.parameters),
-    });
     setSelectedNode(node);
   }, []);
 
@@ -242,14 +229,11 @@ export default function WorkflowCanvas() {
       setNodes((nds) =>
         nds.map((node) => {
           if (node.id === nodeId) {
-            // Preserve all existing data including action object
             return {
               ...node,
               data: {
                 ...node.data,
                 config,
-                // Explicitly preserve action field
-                action: node.data.action,
               },
             };
           }
@@ -294,20 +278,22 @@ export default function WorkflowCanvas() {
   const handleWorkflowUpdate = useCallback(
     (workflowDraft: any) => {
       if (workflowDraft && workflowDraft.nodes && workflowDraft.edges) {
-        // Preserve action objects from existing nodes when updating from chat
+        // Enrich nodes with action_id and domain by looking up action_name
         const updatedNodes = workflowDraft.nodes.map((newNode: Node) => {
-          const existingNode = nodes.find((n) => n.id === newNode.id);
-          if (existingNode && existingNode.data.action) {
-            // Preserve the action object from existing node
-            return {
-              ...newNode,
-              data: {
-                ...newNode.data,
-                action: existingNode.data.action,
-              },
-            };
-          }
-          return newNode;
+          // Find matching action by action_name
+          const matchingAction = availableActions.find(
+            (a) => a.action_name === newNode.data.action_name
+          );
+
+          return {
+            ...newNode,
+            data: {
+              ...newNode.data,
+              action_id: matchingAction?.id, // Add action_id for ConfigPanel
+              domain: matchingAction?.domain, // Add domain for node styling
+              label: matchingAction?.display_name || newNode.data.label, // Use correct display name
+            },
+          };
         });
 
         setNodes(updatedNodes);
@@ -315,7 +301,7 @@ export default function WorkflowCanvas() {
         toast.success('Workflow updated from chat');
       }
     },
-    [nodes, setNodes, setEdges]
+    [availableActions, setNodes, setEdges]
   );
 
   const handleSave = async () => {
@@ -412,17 +398,9 @@ export default function WorkflowCanvas() {
         ...node,
         data: {
           ...node.data,
-          action: node.data.action, // Explicitly preserve action object
           onConfigure: () => {
             // Find the node by ID to get the latest reference
             const currentNode = nodes.find((n) => n.id === node.id);
-            console.log('onConfigure clicked:', {
-              nodeId: node.id,
-              foundNode: !!currentNode,
-              hasAction: !!currentNode?.data.action,
-              actionName: currentNode?.data.action_name,
-              parametersExist: !!(currentNode?.data.action?.parameters),
-            });
             if (currentNode) setSelectedNode(currentNode);
           },
           onDuplicate: () => handleDuplicateNode(node.id),

@@ -4,9 +4,10 @@ import { Settings, Copy, Trash2, CheckCircle, AlertCircle, Loader } from 'lucide
 
 interface ActionNodeData {
   action_name: string;
+  action_id?: string;
   label: string;
+  domain?: string;
   config: Record<string, any>;
-  action?: any;
   status?: 'idle' | 'configured' | 'running' | 'error';
   onConfigure?: () => void;
   onDuplicate?: () => void;
@@ -18,6 +19,7 @@ const domainColors: Record<string, { border: string; bg: string; text: string; a
   'Carrier Follow Up': { border: 'border-blue-400', bg: 'bg-blue-50', text: 'text-blue-700', accent: 'bg-blue-500' },
   'Shipment Update': { border: 'border-green-400', bg: 'bg-green-50', text: 'text-green-700', accent: 'bg-green-500' },
   'Escalation': { border: 'border-orange-400', bg: 'bg-orange-50', text: 'text-orange-700', accent: 'bg-orange-500' },
+  'Document Processing': { border: 'border-purple-400', bg: 'bg-purple-50', text: 'text-purple-700', accent: 'bg-purple-500' },
   'default': { border: 'border-gray-400', bg: 'bg-gray-50', text: 'text-gray-700', accent: 'bg-gray-500' },
 };
 
@@ -34,7 +36,7 @@ function ActionNode({ data, selected, id }: NodeProps<ActionNodeData>) {
   const status = data.status || (hasConfig ? 'configured' : 'idle');
 
   // Get domain-based colors
-  const domain = data.action?.domain || 'default';
+  const domain = data.domain || 'default';
   const colors = domainColors[domain] || domainColors.default;
 
   // Get status icon
@@ -93,16 +95,7 @@ function ActionNode({ data, selected, id }: NodeProps<ActionNodeData>) {
         className={`w-3 h-3 !${colors.accent}`}
       />
 
-      {/* Tooltip */}
-      {showTooltip && data.action?.description && (
-        <div className="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg z-20 w-64 pointer-events-none">
-          <div className="font-semibold mb-1">{data.label}</div>
-          <div className="text-gray-300">{data.action.description}</div>
-          <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1">
-            <div className="border-4 border-transparent border-t-gray-900"></div>
-          </div>
-        </div>
-      )}
+      {/* Tooltip - Removed since we no longer store action.description in node data */}
 
       {/* Quick Actions Menu */}
       {isHovered && (
