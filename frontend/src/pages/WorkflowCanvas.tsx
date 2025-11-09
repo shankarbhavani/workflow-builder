@@ -159,6 +159,14 @@ export default function WorkflowCanvas() {
 
   const onActionSelect = useCallback(
     (action: Action) => {
+      console.log('onActionSelect - Received action:', {
+        action_name: action.action_name,
+        display_name: action.display_name,
+        hasParameters: !!action.parameters,
+        parametersKeys: action.parameters ? Object.keys(action.parameters) : [],
+        actionKeys: Object.keys(action),
+      });
+
       const nodeId = `node-${Date.now()}`;
       const newNode: Node = {
         id: nodeId,
@@ -184,7 +192,19 @@ export default function WorkflowCanvas() {
         },
       };
 
-      setNodes((nds) => [...nds, newNode]);
+      console.log('onActionSelect - Created node:', {
+        nodeId: nodeId,
+        hasAction: !!newNode.data.action,
+        actionInData: newNode.data.action,
+      });
+
+      setNodes((nds) => {
+        const updatedNodes = [...nds, newNode];
+        console.log('onActionSelect - After setNodes, checking last node:', {
+          lastNodeHasAction: !!updatedNodes[updatedNodes.length - 1].data.action,
+        });
+        return updatedNodes;
+      });
 
       // Record command
       workflowHistory.recordCommand(
@@ -197,6 +217,14 @@ export default function WorkflowCanvas() {
   );
 
   const onNodeClick: NodeMouseHandler = useCallback((event, node) => {
+    console.log('onNodeClick - Node data:', {
+      id: node.id,
+      label: node.data.label,
+      action_name: node.data.action_name,
+      hasAction: !!node.data.action,
+      actionKeys: node.data.action ? Object.keys(node.data.action) : [],
+      hasParameters: !!(node.data.action?.parameters),
+    });
     setSelectedNode(node);
   }, []);
 
@@ -384,7 +412,19 @@ export default function WorkflowCanvas() {
         ...node,
         data: {
           ...node.data,
-          onConfigure: () => setSelectedNode(node),
+          action: node.data.action, // Explicitly preserve action object
+          onConfigure: () => {
+            // Find the node by ID to get the latest reference
+            const currentNode = nodes.find((n) => n.id === node.id);
+            console.log('onConfigure clicked:', {
+              nodeId: node.id,
+              foundNode: !!currentNode,
+              hasAction: !!currentNode?.data.action,
+              actionName: currentNode?.data.action_name,
+              parametersExist: !!(currentNode?.data.action?.parameters),
+            });
+            if (currentNode) setSelectedNode(currentNode);
+          },
           onDuplicate: () => handleDuplicateNode(node.id),
           onDelete: () => handleDeleteNode(node.id),
         },
