@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/authStore';
 import Login from '@/pages/Login';
 import WorkflowList from '@/pages/WorkflowList';
 import WorkflowCanvas from '@/pages/WorkflowCanvas';
+import ExecutionList from '@/pages/ExecutionList';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuthStore();
@@ -49,7 +50,7 @@ function App() {
           path="/workflows"
           element={
             <ProtectedRoute>
-              <WorkflowList />
+              <ExecutionList />
             </ProtectedRoute>
           }
         />

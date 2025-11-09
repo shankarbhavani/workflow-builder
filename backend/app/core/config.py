@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     AWS_REGION: str = "us-east-1"
     S3_BUCKET_NAME: str = "fk-sam-files"
 
+    # Test Mode Configuration
+    TEST_S3_PRESIGNED_URL: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,

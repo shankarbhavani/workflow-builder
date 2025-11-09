@@ -161,8 +161,7 @@ export default function WorkflowList() {
                 executions.slice(0, 10).map((execution) => (
                   <div
                     key={execution.id}
-                    className="bg-white rounded-lg shadow p-4 cursor-pointer hover:shadow-md transition-shadow"
-                    onClick={() => navigate(`/executions/${execution.id}`)}
+                    className="bg-white rounded-lg shadow p-4"
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
@@ -182,6 +181,12 @@ export default function WorkflowList() {
                           </span>
                         </div>
                       </div>
+                      <button
+                        onClick={() => navigate('/workflows')}
+                        className="px-3 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                      >
+                        View All →
+                      </button>
                     </div>
                   </div>
                 ))

@@ -61,8 +61,42 @@ async def gmail_download_attachments_to_s3(
             "action": "gmail_download_attachments_to_s3",
             "shipper_id": event_data.shipper_id,
             "agent_id": event_data.agent_id,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
+            "test_mode": config.test_mode
         })
+
+        # Test mode - return mock data without hitting Gmail/S3
+        if config.test_mode:
+            logger.info("Test mode enabled - returning mock data")
+
+            # Get presigned URL from environment variable
+            default_presigned_url = settings.TEST_S3_PRESIGNED_URL
+
+            if not default_presigned_url:
+                raise HTTPException(
+                    status_code=500,
+                    detail="TEST_S3_PRESIGNED_URL environment variable is not configured"
+                )
+
+            audit.append({
+                "step": "TEST_MODE",
+                "status": "COMPLETED",
+                "message": "Returning mock data for testing"
+            })
+
+            return GmailS3ActionResponse(
+                data={
+                    "attachments": {
+                        "document.png": default_presigned_url
+                    },
+                    "processed_emails": 1,
+                    "total_attachments": 1,
+                    "s3_bucket": settings.S3_BUCKET_NAME,
+                    "s3_folder": config.s3_folder,
+                    "test_mode": True
+                },
+                audit=audit
+            )
 
         # Parse time range if provided
         time_range_start = None

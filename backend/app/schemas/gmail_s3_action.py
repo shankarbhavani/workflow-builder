@@ -13,6 +13,7 @@ class GmailConfig(BaseModel):
     time_range_start: Optional[str] = Field(None, description="Start time for email search (ISO format)")
     time_range_end: Optional[str] = Field(None, description="End time for email search (ISO format)")
     s3_folder: str = Field("bhavani", description="S3 folder path for uploads")
+    test_mode: bool = Field(False, description="Enable test mode with mock data (bypasses Gmail/S3)")
 
 
 class EventData(BaseModel):

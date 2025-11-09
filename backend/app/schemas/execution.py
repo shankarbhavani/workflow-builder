@@ -27,6 +27,7 @@ class ExecutionListItemResponse(BaseModel):
     """Schema for execution in list view (without logs)"""
     id: UUID
     workflow_id: UUID
+    workflow_name: str
     temporal_workflow_id: str
     temporal_run_id: str
     status: str
@@ -44,6 +45,7 @@ class ExecutionResponse(BaseModel):
     """Schema for execution response with logs (detail view)"""
     id: UUID
     workflow_id: UUID
+    workflow_name: str
     temporal_workflow_id: str
     temporal_run_id: str
     status: str
